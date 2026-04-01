@@ -1,0 +1,17 @@
+{
+  "name": "comisiones-producto",
+  "version": "1.0.0",
+  "description": "Visualizador de Google Sheets para comisiones por producto con backend seguro",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "googleapis": "^131.0.0"
+  }
+}

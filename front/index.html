@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INFORMACIÓN DE COMISIONES - HOLDING</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="logged-out">
+  <header id="appHeader">
+    <div class="header-content">
+      <div class="header-brand">
+        <h1>INFORMACIÓN DE COMISIONES - HOLDING</h1>
+        <p>Productos: Préstamos, Gestora, Cambio Seguro y Factoring</p>
+      </div>
+      <section class="session-bar">
+        <span id="sessionRole"></span>
+        <button id="logoutBtn" type="button">Cerrar sesión</button>
+        <strong id="sessionUser" class="hidden">Sin sesión</strong>
+      </section>
+    </div>
+  </header>
+
+  <section id="loginView" class="login-view">
+    <form id="loginForm" class="login-card">
+      <h2>Ingreso al sistema</h2>
+      <p>Usa tu usuario y clave para ver las hojas permitidas.</p>
+
+      <label for="usernameInput">Usuario</label>
+      <input id="usernameInput" name="username" type="text" autocomplete="username" required />
+
+      <label for="passwordInput">Clave</label>
+      <input id="passwordInput" name="password" type="password" autocomplete="current-password" required />
+
+      <button id="loginBtn" type="submit">Ingresar</button>
+      <div id="loginStatus" class="status">Ingresa tus credenciales para continuar.</div>
+    </form>
+  </section>
+
+  <div id="appShell" class="container-with-sidebar hidden">
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <button class="nav-item" data-section="avance-comisiones">
+          <span class="nav-icon">⏱️</span>
+          <span class="nav-label">Avance Comisiones</span>
+        </button>
+        <button class="nav-item active" data-section="visualizado">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Esquemas Comisionales</span>
+        </button>
+        <button class="nav-item" data-section="resumen-avance">
+          <span class="nav-icon">📑</span>
+          <span class="nav-label">Seguimiento de Automatizaciones</span>
+        </button>
+        <button class="nav-item" data-section="politicas">
+          <span class="nav-icon">📘</span>
+          <span class="nav-label">Politicas de comisiones</span>
+        </button>
+        <button class="nav-item" data-section="rentabilidad">
+          <span class="nav-icon">📉</span>
+          <span class="nav-label">Dash de rentabilidad</span>
+        </button>
+        <button class="nav-item" data-section="seguimiento">
+          <span class="nav-icon">📈</span>
+          <span class="nav-label">Seguimiento de Excepciones</span>
+        </button>
+        <button class="nav-item" data-section="sueldos-comercial">
+          <span class="nav-icon">💼</span>
+          <span class="nav-label">Sueldos Comercial</span>
+        </button>
+        <button class="nav-item" data-section="gestion-comisiones">
+          <span class="nav-icon">🧩</span>
+          <span class="nav-label">Gestión de comisiones</span>
+        </button>
+      </nav>
+      <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" aria-label="Minimizar menu lateral" aria-expanded="true">
+        <span class="sidebar-toggle-icon">&lt;</span>
+      </button>
+    </aside>
+
+    <main class="main-content">
+      <!-- Sección Visualizado de Comisiones -->
+      <section id="visualizado-section" class="section active">
+        <section class="controls">
+          <label for="productSelect">Seleccionar producto</label>
+          <select id="productSelect"></select>
+
+          <button id="refreshListBtn" type="button">Actualizar lista de hojas</button>
+          <button id="refreshDataBtn" type="button" disabled>Actualizar datos hoja</button>
+        </section>
+
+        <section class="sheet-area">
+          <label for="sheetSelect">Seleccionar esquema</label>
+          <select id="sheetSelect"></select>
+        </section>
+
+        <section class="data-area">
+          <h2 id="activeSheetTitle">Sin hoja seleccionada</h2>
+          <div id="status" class="status">Elige un producto y una hoja para ver los datos</div>
+          <div id="tableWrapper" class="table-wrapper"></div>
+        </section>
+      </section>
+
+      <section id="resumen-avance-section" class="section">
+        <section class="controls">
+          <button id="resumenAvanceRefreshBtn" type="button">Actualizar datos</button>
+        </section>
+
+        <section class="data-area">
+          <h2 id="resumenAvanceTitle">Seguimiento de Automatizaciones</h2>
+          <div id="resumenAvanceStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="resumenAvanceWrapper" class="table-wrapper"></div>
+        </section>
+      </section>
+
+      <section id="politicas-section" class="section">
+        <section class="data-area">
+          <h2 id="politicasTitle">Politicas de comisiones</h2>
+          <div id="politicasStatus" class="status">Documento cargado.</div>
+          <div class="document-frame-wrap">
+            <iframe
+              id="politicasFrame"
+              class="document-frame"
+              title="Politicas de comisiones"
+              src="https://docs.google.com/document/d/1l35VYce1fMWWuGm24gRBJ_nMPf1rQx7aKeFr_qO_66c/preview"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            ></iframe>
+          </div>
+        </section>
+      </section>
+
+      <section id="rentabilidad-section" class="section">
+        <section class="data-area">
+          <h2 id="rentabilidadTitle">Dash de rentabilidad</h2>
+          <div id="rentabilidadStatus" class="status">Dashboard cargado.</div>
+          <div class="document-frame-wrap">
+            <iframe
+              id="rentabilidadFrame"
+              class="document-frame"
+              title="Dash de rentabilidad"
+              src="https://app.powerbi.com/view?r=eyJrIjoiNDZjNzEzZGQtNTQ2NC00NzZhLWJmZDAtYzY1NzRiODAxMzkxIiwidCI6IjM0ZDNhYWJhLTM0ZDQtNGMwMS1iOWUzLWFlMzI5NGFmY2FiNCJ9"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              allowfullscreen
+            ></iframe>
+          </div>
+        </section>
+      </section>
+
+      <!-- Sección Seguimiento de Comisiones -->
+      <section id="seguimiento-section" class="section">
+        <section class="sheet-area">
+          <label for="seguimientoSheetSelect">Seleccionar Producto</label>
+          <select id="seguimientoSheetSelect"></select>
+        </section>
+
+        <section class="data-area">
+          <h2 id="seguimientoSheetTitle">Sin hoja seleccionada</h2>
+          <div id="seguimientoStatus" class="status">Selecciona una hoja para ver los datos</div>
+          <div id="seguimientoTableWrapper" class="table-wrapper"></div>
+        </section>
+      </section>
+
+      <section id="sueldos-comercial-section" class="section">
+        <section class="controls">
+          <button id="sueldosRefreshBtn" type="button">Actualizar datos</button>
+        </section>
+
+        <section class="data-area">
+          <h2 id="sueldosTitle">Sueldos Comercial</h2>
+          <div id="sueldosStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="sueldosFilters" class="filters-grid hidden"></div>
+          <div id="sueldosTableWrapper" class="table-wrapper"></div>
+        </section>
+      </section>
+
+      <section id="gestion-comisiones-section" class="section">
+        <section class="controls">
+          <label for="gestionProductoSelect">Seleccionar producto</label>
+          <select id="gestionProductoSelect"></select>
+          <button id="gestionRefreshBtn" type="button">Actualizar datos</button>
+        </section>
+
+        <section class="data-area">
+          <h2 id="gestionTitle">Gestión de comisiones</h2>
+          <div id="gestionStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="gestionLinksWrapper" class="links-grid"></div>
+        </section>
+      </section>
+
+      <section id="avance-comisiones-section" class="section">
+        <section class="controls">
+          <button id="avanceComisionesRefreshBtn" type="button">Actualizar datos</button>
+        </section>
+
+        <section class="data-area">
+          <h2 id="avanceComisionesTitle">Avance Comisiones</h2>
+          <div id="avanceComisionesStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="avanceComisionesWrapper" class="avance-summary-grid"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
