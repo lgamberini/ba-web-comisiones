@@ -552,6 +552,7 @@ async function handleLogin(req, res) {
   const expiresAt = activeSessions.get(token).expiresAt;
   res.setHeader('Set-Cookie', buildSessionCookie(token, expiresAt));
   sendJson(req, res, 200, {
+    token,
     user: sanitizeUser(username)
   });
 }

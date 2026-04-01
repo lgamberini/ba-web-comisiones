@@ -105,6 +105,7 @@ const sueldosExcludedFilterHeaders = new Set([
   'total'
 ]);
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
+const AUTH_TOKEN_STORAGE_KEY = 'auth-token';
 
 function setStatus(text, isError = false) {
   elements.status.textContent = text;
@@ -137,8 +138,16 @@ function restoreSidebarState() {
 }
 
 async function authFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const authToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+
+  if (authToken) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
+
   return fetch(url, {
     ...options,
+    headers,
     credentials: 'include'
   });
 }
@@ -287,8 +296,18 @@ function showAppForUser(user) {
   }
 }
 
+function storeAuthToken(token) {
+  if (!token) return;
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+function clearStoredAuthToken() {
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
 function clearSessionUi() {
   currentUser = null;
+  clearStoredAuthToken();
   document.body.classList.remove('logged-in');
   document.body.classList.add('logged-out');
   if (autoRefreshId) {
@@ -329,6 +348,7 @@ async function handleLogin(event) {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
+    storeAuthToken(data.token);
     showAppForUser(data.user);
   } catch (err) {
     console.error('Error login:', err.message);
