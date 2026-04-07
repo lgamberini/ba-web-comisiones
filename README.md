@@ -29,6 +29,8 @@ cp back/.env.example back/.env
 - `GERENCIA_PASSWORD`
 - `GOOGLE_CLIENT_EMAIL`
 - `GOOGLE_PRIVATE_KEY`
+- `GOOGLE_LOGIN_CLIENT_ID`
+- `GOOGLE_ROLE_EMAILS_JSON`
 - `ALLOWED_ORIGIN=https://TU_USUARIO.github.io`
 
 Si el frontend vive en otro dominio, añade también:
@@ -44,6 +46,20 @@ El archivo [front/config.js](/Users/lucianagamberini/Library/CloudStorage/Google
 - si lo abres desde GitHub Pages, consumirá el backend público en Render
 
 Así puedes probar cambios localmente sin tener que editar la URL antes de hacer push.
+
+Para habilitar el botón de Google en el frontend, completa también:
+
+- `window.APP_CONFIG.GOOGLE_CLIENT_ID`
+
+Ese valor debe ser el mismo `client_id` web que pongas en `back/.env` como `GOOGLE_LOGIN_CLIENT_ID`.
+
+Para asignar varios correos a distintos roles con Google, usa:
+
+```env
+GOOGLE_ROLE_EMAILS_JSON={"administrador":["admin1@tuempresa.com","admin2@tuempresa.com"],"usuario_gerencia":["gerencia1@tuempresa.com","gerencia2@tuempresa.com"]}
+```
+
+Si todavia tienes el formato anterior con `ADMIN_GOOGLE_EMAIL` y `GERENCIA_GOOGLE_EMAIL`, tambien sigue funcionando como compatibilidad.
 
 ## Ejecución local
 
@@ -105,6 +121,10 @@ ALLOWED_ORIGIN=http://127.0.0.1:5500
 - `COOKIE_SAMESITE`: por defecto `Lax`. Usa `None` si frontend y backend están en dominios distintos
 - `COOKIE_SECURE`: usa `true` para enviar cookies solo por HTTPS
 - `GOOGLE_TOKEN_URI`: endpoint de autenticación de Google
+- `GOOGLE_LOGIN_CLIENT_ID`: client ID OAuth web usado para validar el login con Google
+- `GOOGLE_ROLE_EMAILS_JSON`: objeto JSON con listas de correos por rol para login con Google
+- `ADMIN_GOOGLE_EMAIL`: formato antiguo, se mantiene por compatibilidad
+- `GERENCIA_GOOGLE_EMAIL`: formato antiguo, se mantiene por compatibilidad
 - `AVANCE_COMISIONES_SPREADSHEET_ID`: ID del Google Sheet usado por la sección `Avance Comisiones`
 
 ## Cambio mensual de avance

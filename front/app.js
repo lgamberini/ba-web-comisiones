@@ -32,16 +32,22 @@ const avanceComisionesConfig = {
 
 const excludes = ["indice", "info", "modelo esquemas"];
 const API_BASE_URL = getApiBaseUrl();
+const GOOGLE_CLIENT_ID = getGoogleClientId();
+const IS_LOCAL_ENV = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
 const elements = {
   loginView: document.getElementById("loginView"),
   appShell: document.getElementById("appShell"),
   sidebarToggleBtn: document.getElementById("sidebarToggleBtn"),
   loginForm: document.getElementById("loginForm"),
+  loginIntroText: document.getElementById("loginIntroText"),
   usernameInput: document.getElementById("usernameInput"),
   passwordInput: document.getElementById("passwordInput"),
   loginBtn: document.getElementById("loginBtn"),
   loginStatus: document.getElementById("loginStatus"),
+  googleLoginButton: document.getElementById("googleLoginButton"),
+  googleLoginFallback: document.getElementById("googleLoginFallback"),
+  credentialsLoginWrap: document.getElementById("credentialsLoginWrap"),
   sessionUser: document.getElementById("sessionUser"),
   sessionRole: document.getElementById("sessionRole"),
   logoutBtn: document.getElementById("logoutBtn"),
@@ -88,6 +94,7 @@ const tableRange = 'A1:ZZ5000';
 const excludedHeaders = new Set(['link manual']);
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
 const AUTH_TOKEN_STORAGE_KEY = 'auth-token';
+let googleLoginInitialized = false;
 
 function setStatus(text, isError = false) {
   elements.status.textContent = text;
@@ -141,6 +148,25 @@ function getApiBaseUrl() {
   }
 
   return window.location.origin;
+}
+
+function getGoogleClientId() {
+  return String(window.APP_CONFIG?.GOOGLE_CLIENT_ID || '').trim();
+}
+
+function configureLoginView() {
+  if (IS_LOCAL_ENV) {
+    elements.loginIntroText.textContent = 'Ingresa con Google o usa usuario y clave para las pruebas de roles.';
+    elements.credentialsLoginWrap.classList.remove('hidden');
+    elements.usernameInput.required = true;
+    elements.passwordInput.required = true;
+    return;
+  }
+
+  elements.loginIntroText.textContent = 'Ingresa con tu cuenta Google autorizada para continuar.';
+  elements.credentialsLoginWrap.classList.add('hidden');
+  elements.usernameInput.required = false;
+  elements.passwordInput.required = false;
 }
 
 function hasAccessToSection(sectionId) {
@@ -319,6 +345,71 @@ async function handleLogin(event) {
     console.error('Error login:', err.message);
     setLoginStatus(err.message, true);
   }
+}
+
+async function handleGoogleCredentialResponse(response) {
+  const idToken = String(response?.credential || '').trim();
+  if (!idToken) {
+    setLoginStatus('Google no devolvio un token valido.', true);
+    return;
+  }
+
+  setLoginStatus('Validando acceso con Google...', false);
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/login/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ idToken })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    storeAuthToken(data.token);
+    showAppForUser(data.user);
+  } catch (err) {
+    console.error('Error login google:', err.message);
+    setLoginStatus(err.message, true);
+  }
+}
+
+function initGoogleLogin(attempt = 0) {
+  if (!GOOGLE_CLIENT_ID) {
+    elements.googleLoginFallback.classList.remove('hidden');
+    return;
+  }
+
+  const googleIdentity = window.google?.accounts?.id;
+  if (!googleIdentity) {
+    if (attempt >= 20) {
+      elements.googleLoginFallback.textContent = 'No se pudo cargar Google Sign-In en este momento.';
+      elements.googleLoginFallback.classList.remove('hidden');
+      return;
+    }
+
+    window.setTimeout(() => initGoogleLogin(attempt + 1), 250);
+    return;
+  }
+
+  if (googleLoginInitialized) return;
+
+  googleIdentity.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredentialResponse
+  });
+  googleIdentity.renderButton(elements.googleLoginButton, {
+    theme: 'outline',
+    size: 'large',
+    width: '360',
+    text: 'signin_with',
+    shape: 'rect'
+  });
+  googleLoginInitialized = true;
+  elements.googleLoginFallback.classList.add('hidden');
 }
 
 async function restoreSession() {
@@ -1837,7 +1928,9 @@ function changeSection(sectionId) {
 }
 
 function init() {
+  configureLoginView();
   restoreSidebarState();
+  initGoogleLogin();
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.logoutBtn.addEventListener("click", logout);
   elements.sidebarToggleBtn.addEventListener("click", toggleSidebar);

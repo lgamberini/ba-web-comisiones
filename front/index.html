@@ -26,16 +26,30 @@
 
   <section id="loginView" class="login-view">
     <form id="loginForm" class="login-card">
-      <h2>Ingreso al sistema</h2>
-      <p>Usa tu usuario y clave para ver las hojas permitidas.</p>
+      <h2>Ingreso a Web de Comisiones Holding</h2>
+      <p id="loginIntroText">Ingresa con Google o usa usuario y clave para las pruebas de roles.</p>
 
-      <label for="usernameInput">Usuario</label>
-      <input id="usernameInput" name="username" type="text" autocomplete="username" required />
+      <div class="social-login">
+        <span class="social-login-label">Ingreso con Google</span>
+        <div id="googleLoginWrap" class="google-login-wrap">
+          <div id="googleLoginButton"></div>
+          <div id="googleLoginFallback" class="social-login-note hidden">
+            El acceso con Google no esta configurado en este entorno.
+          </div>
+        </div>
+      </div>
 
-      <label for="passwordInput">Clave</label>
-      <input id="passwordInput" name="password" type="password" autocomplete="current-password" required />
+      <div id="credentialsLoginWrap" class="credentials-login-wrap">
+        <div id="loginDivider" class="login-divider"><span>o continuar con usuario y clave</span></div>
 
-      <button id="loginBtn" type="submit">Ingresar</button>
+        <label for="usernameInput">Usuario</label>
+        <input id="usernameInput" name="username" type="text" autocomplete="username" required />
+
+        <label for="passwordInput">Clave</label>
+        <input id="passwordInput" name="password" type="password" autocomplete="current-password" required />
+
+        <button id="loginBtn" type="submit">Ingresar</button>
+      </div>
       <div id="loginStatus" class="status">Ingresa tus credenciales para continuar.</div>
     </form>
   </section>
@@ -190,6 +204,7 @@
   </div>
 
   <script src="config.js?v=20260407-1"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="app.js?v=20260407-1"></script>
 </body>
 </html>

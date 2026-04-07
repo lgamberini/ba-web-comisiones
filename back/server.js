@@ -97,7 +97,18 @@ const PORT = Number(process.env.PORT) || 3000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || 'Lax';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+const ROLE_DEFINITIONS = {
+  administrador: {
+    allowedSections: ['avance-comisiones', 'visualizado', 'resumen-avance', 'politicas', 'rentabilidad', 'seguimiento', 'gestion-comisiones'],
+    allowedSpreadsheetIds: ['*']
+  },
+  usuario_gerencia: {
+    allowedSections: ['visualizado', 'politicas', 'rentabilidad', 'seguimiento'],
+    allowedSpreadsheetIds: [...VISUALIZADO_SPREADSHEET_IDS, SEGUIMIENTO_SPREADSHEET_ID]
+  }
+};
 const USER_CONFIG = buildUserConfig();
+const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
 
 function loadDotEnv() {
   if (!fs.existsSync(ENV_PATH)) return;
@@ -131,13 +142,13 @@ function buildUserConfig() {
   const gerenciaUsername = process.env.GERENCIA_USERNAME;
   const gerenciaPassword = process.env.GERENCIA_PASSWORD;
   const config = {};
+  const googleRoleEmails = parseGoogleRoleEmails();
 
   if (adminUsername && adminPassword) {
     config[adminUsername] = {
       password: adminPassword,
       role: 'administrador',
-      allowedSections: ['avance-comisiones', 'visualizado', 'resumen-avance', 'politicas', 'rentabilidad', 'seguimiento', 'gestion-comisiones'],
-      allowedSpreadsheetIds: ['*']
+      ...ROLE_DEFINITIONS.administrador
     };
   }
 
@@ -145,10 +156,22 @@ function buildUserConfig() {
     config[gerenciaUsername] = {
       password: gerenciaPassword,
       role: 'usuario_gerencia',
-      allowedSections: ['visualizado', 'politicas', 'rentabilidad', 'seguimiento'],
-      allowedSpreadsheetIds: [...VISUALIZADO_SPREADSHEET_IDS, SEGUIMIENTO_SPREADSHEET_ID]
+      ...ROLE_DEFINITIONS.usuario_gerencia
     };
   }
+
+  Object.entries(googleRoleEmails).forEach(([role, emails]) => {
+    const roleDefinition = ROLE_DEFINITIONS[role];
+    if (!roleDefinition) return;
+
+    emails.forEach(email => {
+      config[email] = {
+        role,
+        ...roleDefinition,
+        authProvider: 'google'
+      };
+    });
+  });
 
   if (!Object.keys(config).length) {
     throw new Error(
@@ -157,6 +180,51 @@ function buildUserConfig() {
   }
 
   return config;
+}
+
+function normalizeEmailList(value) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(',')
+        .map(entry => entry.trim());
+
+  return Array.from(new Set(
+    rawValues
+      .map(entry => String(entry || '').trim().toLowerCase())
+      .filter(Boolean)
+  ));
+}
+
+function parseGoogleRoleEmails() {
+  const fallbackRoleEmails = {
+    administrador: normalizeEmailList(process.env.ADMIN_GOOGLE_EMAIL),
+    usuario_gerencia: normalizeEmailList(process.env.GERENCIA_GOOGLE_EMAIL)
+  };
+  const rawJson = String(process.env.GOOGLE_ROLE_EMAILS_JSON || '').trim();
+  if (!rawJson) {
+    if (!fallbackRoleEmails.administrador.length && !fallbackRoleEmails.usuario_gerencia.length) {
+      return {};
+    }
+    return fallbackRoleEmails;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (error) {
+    throw new Error('GOOGLE_ROLE_EMAILS_JSON no tiene un JSON valido.');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('GOOGLE_ROLE_EMAILS_JSON debe ser un objeto por rol.');
+  }
+
+  return Object.keys(ROLE_DEFINITIONS).reduce((acc, role) => {
+    const configuredEmails = normalizeEmailList(parsed[role]);
+    acc[role] = configuredEmails.length ? configuredEmails : fallbackRoleEmails[role];
+    return acc;
+  }, {});
 }
 
 function loadCredentials() {
@@ -273,6 +341,52 @@ async function googleSheetsRequest(endpoint, params = {}) {
   }
 
   return data;
+}
+
+async function verifyGoogleIdToken(idToken) {
+  if (!GOOGLE_LOGIN_CLIENT_ID) {
+    throw new Error('El login con Google no esta configurado.');
+  }
+
+  let response;
+  try {
+    response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+  } catch (error) {
+    const cause = error.cause?.message ? ` Detalle: ${error.cause.message}` : '';
+    throw new Error(`No se pudo validar el acceso con Google.${cause}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error_description || data.error || 'Token de Google invalido.');
+  }
+
+  const email = String(data.email || '').trim().toLowerCase();
+  const audience = String(data.aud || '').trim();
+  const emailVerified = String(data.email_verified || '').toLowerCase() === 'true';
+  const issuer = String(data.iss || '').trim();
+  const validIssuers = new Set(['accounts.google.com', 'https://accounts.google.com']);
+
+  if (!email) {
+    throw new Error('Google no devolvio un correo valido.');
+  }
+
+  if (!emailVerified) {
+    throw new Error('La cuenta de Google debe tener el correo verificado.');
+  }
+
+  if (audience !== GOOGLE_LOGIN_CLIENT_ID) {
+    throw new Error('El token de Google no pertenece a esta aplicacion.');
+  }
+
+  if (!validIssuers.has(issuer)) {
+    throw new Error('El emisor del token de Google no es valido.');
+  }
+
+  return {
+    email,
+    name: String(data.name || '').trim()
+  };
 }
 
 function createSession(username) {
@@ -555,6 +669,32 @@ async function handleLogin(req, res) {
   });
 }
 
+async function handleGoogleLogin(req, res) {
+  const body = await parseJsonBody(req);
+  const idToken = String(body.idToken || '').trim();
+
+  if (!idToken) {
+    sendJson(req, res, 400, { error: 'Falta el token de Google.' });
+    return;
+  }
+
+  const googleUser = await verifyGoogleIdToken(idToken);
+  const user = USER_CONFIG[googleUser.email];
+
+  if (!user) {
+    sendJson(req, res, 403, { error: 'Tu correo de Google no tiene acceso a esta aplicacion.' });
+    return;
+  }
+
+  const token = createSession(googleUser.email);
+  const expiresAt = activeSessions.get(token).expiresAt;
+  res.setHeader('Set-Cookie', buildSessionCookie(token, expiresAt));
+  sendJson(req, res, 200, {
+    token,
+    user: sanitizeUser(googleUser.email)
+  });
+}
+
 function handleSession(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -698,6 +838,11 @@ async function requestHandler(req, res) {
   try {
     if (req.method === 'POST' && url.pathname === '/api/login') {
       await handleLogin(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/login/google') {
+      await handleGoogleLogin(req, res);
       return;
     }
 
