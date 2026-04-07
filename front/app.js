@@ -158,6 +158,7 @@ function configureLoginView() {
   if (IS_LOCAL_ENV) {
     elements.loginIntroText.textContent = 'Ingresa con Google o usa usuario y clave para las pruebas de roles.';
     elements.credentialsLoginWrap.classList.remove('hidden');
+    elements.loginStatus.classList.remove('hidden');
     elements.usernameInput.required = true;
     elements.passwordInput.required = true;
     return;
@@ -165,6 +166,7 @@ function configureLoginView() {
 
   elements.loginIntroText.textContent = 'Ingresa con tu cuenta Google autorizada para continuar.';
   elements.credentialsLoginWrap.classList.add('hidden');
+  elements.loginStatus.classList.add('hidden');
   elements.usernameInput.required = false;
   elements.passwordInput.required = false;
 }
