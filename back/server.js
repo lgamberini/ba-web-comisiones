@@ -13,13 +13,11 @@ const VISUALIZADO_SPREADSHEET_IDS = [
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc'
 ];
 const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs';
-const SUELDOS_COMERCIAL_SPREADSHEET_ID = '1JupB-QtB4WpUiQ4Gyj_KBRo5wrhrhuGX_k0p3ubCegs';
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg';
 const AVANCE_COMISIONES_SPREADSHEET_ID =
   process.env.AVANCE_COMISIONES_SPREADSHEET_ID || '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM';
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
-  [SUELDOS_COMERCIAL_SPREADSHEET_ID]: ['sueldos'],
   [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab'],
   [AVANCE_COMISIONES_SPREADSHEET_ID]: ['cronograma']
 };
@@ -138,7 +136,7 @@ function buildUserConfig() {
     config[adminUsername] = {
       password: adminPassword,
       role: 'administrador',
-      allowedSections: ['avance-comisiones', 'visualizado', 'resumen-avance', 'politicas', 'rentabilidad', 'seguimiento', 'sueldos-comercial', 'gestion-comisiones'],
+      allowedSections: ['avance-comisiones', 'visualizado', 'resumen-avance', 'politicas', 'rentabilidad', 'seguimiento', 'gestion-comisiones'],
       allowedSpreadsheetIds: ['*']
     };
   }

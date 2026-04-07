@@ -16,11 +16,6 @@ const seguimientoSheetConfig = {
   nombre: "Seguimiento de Excepciones", 
   id: "1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs" 
 };
-const sueldosComercialConfig = {
-  nombre: 'Sueldos Comercial',
-  id: '1JupB-QtB4WpUiQ4Gyj_KBRo5wrhrhuGX_k0p3ubCegs',
-  sheetName: 'Sueldos'
-};
 const gestionComisionesConfig = {
   nombre: 'Gestión de comisiones',
   id: '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg',
@@ -71,11 +66,6 @@ const elements = {
   seguimientoSheetTitle: document.getElementById("seguimientoSheetTitle"),
   seguimientoStatus: document.getElementById("seguimientoStatus"),
   seguimientoTableWrapper: document.getElementById("seguimientoTableWrapper"),
-  sueldosTitle: document.getElementById("sueldosTitle"),
-  sueldosStatus: document.getElementById("sueldosStatus"),
-  sueldosFilters: document.getElementById("sueldosFilters"),
-  sueldosTableWrapper: document.getElementById("sueldosTableWrapper"),
-  sueldosRefreshBtn: document.getElementById("sueldosRefreshBtn"),
   gestionProductoSelect: document.getElementById("gestionProductoSelect"),
   gestionTitle: document.getElementById("gestionTitle"),
   gestionStatus: document.getElementById("gestionStatus"),
@@ -92,18 +82,10 @@ let currentSheet = null;
 let currentSeguimientoSheet = null;
 let autoRefreshId = null;
 let currentUser = null;
-let currentSueldosFilters = {};
 let currentGestionGroups = [];
 let currentGestionProduct = '';
 const tableRange = 'A1:ZZ5000';
 const excludedHeaders = new Set(['link manual']);
-const sueldosExcludedFilterHeaders = new Set([
-  'sueldo_base',
-  'sodexo',
-  'movilidad',
-  'adicional',
-  'total'
-]);
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
 const AUTH_TOKEN_STORAGE_KEY = 'auth-token';
 
@@ -189,16 +171,6 @@ function resetResumenAvanceState() {
   elements.resumenAvanceWrapper.innerHTML = '';
 }
 
-function resetSueldosState() {
-  currentSueldosFilters = {};
-  elements.sueldosTitle.textContent = sueldosComercialConfig.nombre;
-  elements.sueldosStatus.textContent = 'Abre esta sección para cargar la información.';
-  elements.sueldosStatus.style.color = '#334155';
-  elements.sueldosFilters.innerHTML = '';
-  elements.sueldosFilters.classList.add('hidden');
-  elements.sueldosTableWrapper.innerHTML = '';
-}
-
 function resetGestionState() {
   currentGestionGroups = [];
   currentGestionProduct = '';
@@ -255,11 +227,6 @@ function applyPermissions() {
     resetRentabilidadState();
   }
 
-  if (!hasAccessToSection('sueldos-comercial')) {
-    document.getElementById('sueldos-comercial-section').classList.remove('active');
-    resetSueldosState();
-  }
-
   if (!hasAccessToSection('gestion-comisiones')) {
     document.getElementById('gestion-comisiones-section').classList.remove('active');
     resetGestionState();
@@ -275,7 +242,9 @@ function applyPermissions() {
     resetVisualizadoState();
   }
 
-  const firstAllowedSection = currentUser?.allowedSections?.[0];
+  const firstAllowedButton = Array.from(document.querySelectorAll('.nav-item'))
+    .find(button => !button.classList.contains('hidden'));
+  const firstAllowedSection = firstAllowedButton?.getAttribute('data-section');
   if (firstAllowedSection) {
     changeSection(firstAllowedSection);
   }
@@ -291,9 +260,6 @@ function showAppForUser(user) {
   elements.loginView.classList.add('hidden');
   elements.appShell.classList.remove('hidden');
   applyPermissions();
-  if (hasAccessToSection('visualizado')) {
-    loadProducts();
-  }
 }
 
 function storeAuthToken(token) {
@@ -317,7 +283,6 @@ function clearSessionUi() {
   resetVisualizadoState();
   resetSeguimientoState();
   resetResumenAvanceState();
-  resetSueldosState();
   resetGestionState();
   resetAvanceComisionesState();
   resetPoliticasState();
@@ -936,138 +901,6 @@ function filterDetailGridByProduct(grid, selectedProduct) {
   });
 
   return trimGrid(filteredRows);
-}
-
-function getFilterableHeaders(grid) {
-  if (!grid.length) return [];
-
-  return (grid[0] || []).map((cell, colIndex) => {
-    if (cell?.covered) return null;
-
-    const label = String(cell?.text || '').trim() || `Columna ${colIndex + 1}`;
-    const normalizedLabel = label.toLowerCase();
-    if (sueldosExcludedFilterHeaders.has(normalizedLabel)) {
-      return null;
-    }
-
-    return {
-      colIndex,
-      label
-    };
-  }).filter(Boolean);
-}
-
-function getUniqueColumnValues(grid, colIndex) {
-  const values = new Set();
-
-  grid.slice(1).forEach(row => {
-    const value = getCellText(row, colIndex);
-    if (!value) return;
-    values.add(value);
-  });
-
-  return Array.from(values).sort((a, b) => a.localeCompare(b, 'es'));
-}
-
-function filterGridByColumnFilters(grid, filters = {}, excludedColIndex = null) {
-  if (!grid.length) return grid;
-
-  const filteredRows = grid.filter((row, rowIndex) => {
-    if (rowIndex === 0) return true;
-
-    return Object.entries(filters).every(([key, rawValue]) => {
-      if (excludedColIndex != null && Number(key) === excludedColIndex) {
-        return true;
-      }
-
-      const value = String(rawValue || '').trim().toLowerCase();
-      if (!value) return true;
-
-      return getCellText(row, Number(key)).toLowerCase().includes(value);
-    });
-  });
-
-  return trimGrid(filteredRows);
-}
-
-function updateSueldosFilterOptions(grid) {
-  const headers = getFilterableHeaders(grid);
-
-  headers.forEach(({ colIndex }) => {
-    const dataList = document.getElementById(`sueldos-filter-options-${colIndex}`);
-    if (!dataList) return;
-
-    const filteredGridForOptions = filterGridByColumnFilters(grid, currentSueldosFilters, colIndex);
-    const values = getUniqueColumnValues(filteredGridForOptions, colIndex);
-
-    dataList.innerHTML = '';
-    values.forEach(value => {
-      const option = document.createElement('option');
-      option.value = value;
-      dataList.appendChild(option);
-    });
-  });
-}
-
-function renderSueldosFilters(grid) {
-  const headers = getFilterableHeaders(grid);
-  elements.sueldosFilters.innerHTML = '';
-
-  if (!headers.length) {
-    elements.sueldosFilters.classList.add('hidden');
-    return;
-  }
-
-  headers.forEach(({ colIndex, label }) => {
-    const field = document.createElement('div');
-    field.className = 'filter-field';
-
-    const fieldLabel = document.createElement('label');
-    fieldLabel.htmlFor = `sueldos-filter-${colIndex}`;
-    fieldLabel.textContent = label;
-
-    const input = document.createElement('input');
-    const dataList = document.createElement('datalist');
-    const listId = `sueldos-filter-options-${colIndex}`;
-
-    input.id = `sueldos-filter-${colIndex}`;
-    input.type = 'text';
-    input.placeholder = `Filtrar por ${label}`;
-    input.setAttribute('list', listId);
-    input.autocomplete = 'off';
-    input.value = currentSueldosFilters[colIndex] || '';
-    input.addEventListener('input', () => {
-      currentSueldosFilters[colIndex] = input.value;
-      updateSueldosFilterOptions(grid);
-      renderSueldosTable(grid);
-    });
-
-    dataList.id = listId;
-
-    field.appendChild(fieldLabel);
-    field.appendChild(input);
-    field.appendChild(dataList);
-    elements.sueldosFilters.appendChild(field);
-  });
-
-  updateSueldosFilterOptions(grid);
-  elements.sueldosFilters.classList.remove('hidden');
-}
-
-function renderSueldosTable(grid) {
-  const filteredGrid = filterGridByColumnFilters(grid, currentSueldosFilters);
-  elements.sueldosTableWrapper.innerHTML = '';
-
-  if (filteredGrid.length <= 1) {
-    elements.sueldosStatus.textContent = 'No hay resultados para los filtros aplicados.';
-    elements.sueldosStatus.style.color = '#334155';
-    appendTableToElement(filteredGrid, elements.sueldosTableWrapper);
-    return;
-  }
-
-  renderTableToElement(filteredGrid, elements.sueldosTableWrapper);
-  elements.sueldosStatus.textContent = `Datos cargados: ${filteredGrid.length - 1} filas visibles.`;
-  elements.sueldosStatus.style.color = '#334155';
 }
 
 function getCellLink(row, columnIndex) {
@@ -1865,39 +1698,6 @@ async function fetchSeguimientoSheetData() {
   }
 }
 
-async function loadSueldosComercialData() {
-  if (!hasAccessToSection('sueldos-comercial')) return;
-
-  elements.sueldosTitle.textContent = sueldosComercialConfig.nombre;
-  elements.sueldosStatus.textContent = 'Cargando Sueldos Comercial...';
-  elements.sueldosStatus.style.color = '#334155';
-  elements.sueldosFilters.innerHTML = '';
-  elements.sueldosFilters.classList.add('hidden');
-  elements.sueldosTableWrapper.innerHTML = '';
-
-  try {
-    const data = await fetchSingleSheetData(sueldosComercialConfig.id, sueldosComercialConfig.sheetName);
-    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
-
-    currentSueldosFilters = {};
-
-    if (!grid.length) {
-      elements.sueldosStatus.textContent = 'La hoja Sueldos no tiene datos visibles.';
-      return;
-    }
-
-    renderSueldosFilters(grid);
-    renderSueldosTable(grid);
-  } catch (err) {
-    console.error('Error loadSueldosComercialData:', err.message);
-    elements.sueldosStatus.textContent = `Error al leer datos: ${err.message}`;
-    elements.sueldosStatus.style.color = '#b91c1c';
-    elements.sueldosFilters.innerHTML = '';
-    elements.sueldosFilters.classList.add('hidden');
-    elements.sueldosTableWrapper.innerHTML = '';
-  }
-}
-
 async function loadGestionComisionesData() {
   if (!hasAccessToSection('gestion-comisiones')) return;
 
@@ -1985,7 +1785,10 @@ function changeSection(sectionId) {
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.classList.remove('active');
   });
-  document.querySelector(`[data-section="${sectionId}"]`).classList.add('active');
+  const activeButton = document.querySelector(`[data-section="${sectionId}"]`);
+  if (activeButton) {
+    activeButton.classList.add('active');
+  }
 
   // Pausar auto-refresh si cambias de sección
   if (sectionId === 'seguimiento') {
@@ -2008,8 +1811,8 @@ function changeSection(sectionId) {
     return;
   }
 
-  if (sectionId === 'sueldos-comercial') {
-    loadSueldosComercialData();
+  if (sectionId === 'visualizado') {
+    loadProducts();
     return;
   }
 
@@ -2044,7 +1847,6 @@ function init() {
   elements.seguimientoSheetSelect.addEventListener("change", (e) => selectSeguimientoSheet(e.target.value));
   elements.refreshListBtn.addEventListener("click", selectProduct);
   elements.refreshDataBtn.addEventListener("click", fetchSheetData);
-  elements.sueldosRefreshBtn.addEventListener("click", loadSueldosComercialData);
   elements.gestionProductoSelect.addEventListener("change", (e) => selectGestionProduct(e.target.value));
   elements.gestionRefreshBtn.addEventListener("click", loadGestionComisionesData);
   elements.avanceComisionesRefreshBtn.addEventListener("click", loadAvanceComisionesData);

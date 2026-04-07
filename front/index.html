@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>INFORMACIÓN DE COMISIONES - HOLDING</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260407-1" />
 </head>
 <body class="logged-out">
   <header id="appHeader">
@@ -44,7 +47,7 @@
           <span class="nav-icon">⏱️</span>
           <span class="nav-label">Avance Comisiones</span>
         </button>
-        <button class="nav-item active" data-section="visualizado">
+        <button class="nav-item" data-section="visualizado">
           <span class="nav-icon">📊</span>
           <span class="nav-label">Esquemas Comisionales</span>
         </button>
@@ -64,10 +67,6 @@
           <span class="nav-icon">📈</span>
           <span class="nav-label">Seguimiento de Excepciones</span>
         </button>
-        <button class="nav-item" data-section="sueldos-comercial">
-          <span class="nav-icon">💼</span>
-          <span class="nav-label">Sueldos Comercial</span>
-        </button>
         <button class="nav-item" data-section="gestion-comisiones">
           <span class="nav-icon">🧩</span>
           <span class="nav-label">Gestión de comisiones</span>
@@ -80,7 +79,7 @@
 
     <main class="main-content">
       <!-- Sección Visualizado de Comisiones -->
-      <section id="visualizado-section" class="section active">
+      <section id="visualizado-section" class="section">
         <section class="controls">
           <label for="productSelect">Seleccionar producto</label>
           <select id="productSelect"></select>
@@ -162,19 +161,6 @@
         </section>
       </section>
 
-      <section id="sueldos-comercial-section" class="section">
-        <section class="controls">
-          <button id="sueldosRefreshBtn" type="button">Actualizar datos</button>
-        </section>
-
-        <section class="data-area">
-          <h2 id="sueldosTitle">Sueldos Comercial</h2>
-          <div id="sueldosStatus" class="status">Abre esta sección para cargar la información.</div>
-          <div id="sueldosFilters" class="filters-grid hidden"></div>
-          <div id="sueldosTableWrapper" class="table-wrapper"></div>
-        </section>
-      </section>
-
       <section id="gestion-comisiones-section" class="section">
         <section class="controls">
           <label for="gestionProductoSelect">Seleccionar producto</label>
@@ -203,7 +189,7 @@
     </main>
   </div>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=20260407-1"></script>
+  <script src="app.js?v=20260407-1"></script>
 </body>
 </html>

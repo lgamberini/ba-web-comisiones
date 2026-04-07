@@ -1,0 +1,7 @@
+{
+  "name": "web-comisiones-local",
+  "private": true,
+  "scripts": {
+    "dev-local": "node scripts/dev-local.js"
+  }
+}

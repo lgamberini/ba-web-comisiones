@@ -38,17 +38,30 @@ Si el frontend vive en otro dominio, añade también:
 
 ## Configuración del frontend
 
-Edita [front/config.js](/Users/lucianagamberini/Library/CloudStorage/GoogleDrive-lgamberini@prestamype.com/.shortcut-targets-by-id/1wzewbtJQv6Fr_f0uKnZrRg-jPtPM9D8a/BUSINESS ANALYTICS/OTROS/COMISIONES/DOCUMENTACION/WEB_COMISIONES/front/config.js) y reemplaza la URL local por la URL pública de tu backend:
+El archivo [front/config.js](/Users/lucianagamberini/Library/CloudStorage/GoogleDrive-lgamberini@prestamype.com/.shortcut-targets-by-id/1wzewbtJQv6Fr_f0uKnZrRg-jPtPM9D8a/BUSINESS ANALYTICS/OTROS/COMISIONES/DOCUMENTACION/WEB_COMISIONES/front/config.js) ya está preparado para trabajar en paralelo:
 
-```js
-window.APP_CONFIG = {
-  API_BASE_URL: "https://tu-backend.onrender.com"
-};
-```
+- si abres el frontend en `localhost` o `127.0.0.1`, consumirá `http://127.0.0.1:3000`
+- si lo abres desde GitHub Pages, consumirá el backend público en Render
 
-Luego sube el contenido de `front/` a GitHub Pages.
+Así puedes probar cambios localmente sin tener que editar la URL antes de hacer push.
 
 ## Ejecución local
+
+Con un solo comando desde la raiz del proyecto:
+
+```bash
+npm run dev-local
+```
+
+Ese comando:
+
+- inicia el backend en `http://127.0.0.1:3000`
+- inicia el frontend en `http://127.0.0.1:5500`
+- si `back/.env` no existe, copia el `.env` de la raiz automaticamente
+
+Para detener ambos procesos, usa `Ctrl + C`.
+
+Si prefieres levantar cada parte manualmente, puedes hacerlo asi:
 
 Instalar dependencias del backend y levantar el servidor:
 
@@ -64,7 +77,24 @@ El backend queda disponible en:
 http://127.0.0.1:3000
 ```
 
-Para probar localmente el frontend, abre `front/index.html` con un servidor estático o desde tu editor.
+Para probar localmente el frontend, sirve `front/` con un servidor estático:
+
+```bash
+cd front
+python3 -m http.server 5500
+```
+
+Luego abre:
+
+```text
+http://127.0.0.1:5500
+```
+
+Si usas ese origen local, recuerda incluirlo en `back/.env`:
+
+```env
+ALLOWED_ORIGIN=http://127.0.0.1:5500
+```
 
 ## Variables principales
 
