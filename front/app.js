@@ -102,6 +102,9 @@ function setStatus(text, isError = false) {
 }
 
 function setLoginStatus(text, isError = false) {
+  if (!IS_LOCAL_ENV) {
+    elements.loginStatus.classList.remove('hidden');
+  }
   elements.loginStatus.textContent = text;
   elements.loginStatus.style.color = isError ? '#b91c1c' : '#334155';
 }
@@ -318,7 +321,12 @@ function clearSessionUi() {
   elements.loginForm.reset();
   elements.appShell.classList.add('hidden');
   elements.loginView.classList.remove('hidden');
-  setLoginStatus('Ingresa tus credenciales para continuar.', false);
+  if (IS_LOCAL_ENV) {
+    setLoginStatus('Ingresa tus credenciales para continuar.', false);
+  } else {
+    elements.loginStatus.textContent = '';
+    elements.loginStatus.classList.add('hidden');
+  }
 }
 
 async function handleLogin(event) {
