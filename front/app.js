@@ -124,6 +124,31 @@ let currentProduct = null;
 let currentSheet = null;
 let currentSeguimientoSheet = null;
 let autoRefreshId = null;
+let inactivityTimer = null;
+const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hora
+
+function resetInactivityTimer() {
+  if (!currentUser) return;
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(async () => {
+    await logout();
+    setLoginStatus('Sesión cerrada por inactividad. Por favor vuelve a ingresar.', false);
+    elements.loginStatus.classList.remove('hidden');
+  }, INACTIVITY_TIMEOUT_MS);
+}
+
+function startInactivityTracking() {
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+    document.addEventListener(evt, resetInactivityTimer, { passive: true });
+  });
+  resetInactivityTimer();
+}
+
+function stopInactivityTracking() {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = null;
+}
+
 let currentUser = null;
 let currentGestionGroups = [];
 let currentGestionProduct = '';
@@ -184,11 +209,19 @@ async function authFetch(url, options = {}) {
     headers.set('Authorization', `Bearer ${authToken}`);
   }
 
-  return fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers,
     credentials: 'include'
   });
+
+  if (res.status === 401 && currentUser) {
+    await logout();
+    setLoginStatus('Tu sesión expiró. Por favor vuelve a ingresar.', false);
+    elements.loginStatus.classList.remove('hidden');
+  }
+
+  return res;
 }
 
 function getApiBaseUrl() {
@@ -377,6 +410,7 @@ function showAppForUser(user) {
   elements.loginView.classList.add('hidden');
   elements.appShell.classList.remove('hidden');
   applyPermissions();
+  startInactivityTracking();
 }
 
 function storeAuthToken(token) {
@@ -389,6 +423,7 @@ function clearStoredAuthToken() {
 }
 
 function clearSessionUi() {
+  stopInactivityTracking();
   currentUser = null;
   clearStoredAuthToken();
   document.body.classList.remove('logged-in');
