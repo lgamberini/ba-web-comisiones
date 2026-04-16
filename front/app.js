@@ -29,6 +29,30 @@ const avanceComisionesConfig = {
   id: '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM',
   sheetName: 'CRONOGRAMA'
 };
+const detalleIndicadoresConfig = {
+  nombre: 'DETALLE INDICADORES',
+  id: gestionComisionesConfig.id,
+  sheetName: 'DETALLE_INDICADORES'
+};
+const linksInteresConfig = {
+  nombre: 'LINK DE INTERES',
+  id: gestionComisionesConfig.id,
+  sheetName: 'LINK_DE_INTERES'
+};
+const sectionDictionary = {
+  'doc-a': 'avance-comisiones',
+  'doc-b': 'visualizado',
+  'doc-c': 'resumen-avance',
+  'doc-d': 'politicas',
+  'doc-e': 'rentabilidad',
+  'doc-f': 'seguimiento',
+  'doc-g': 'gestion-comisiones',
+  'doc-h': 'detalle-indicadores',
+  'doc-i': 'links-interes'
+};
+const sectionAliasesById = Object.fromEntries(
+  Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
+);
 
 const excludes = ["indice", "info", "modelo esquemas"];
 const API_BASE_URL = getApiBaseUrl();
@@ -77,6 +101,19 @@ const elements = {
   gestionStatus: document.getElementById("gestionStatus"),
   gestionLinksWrapper: document.getElementById("gestionLinksWrapper"),
   gestionRefreshBtn: document.getElementById("gestionRefreshBtn"),
+  detalleIndicadoresProductoSelect: document.getElementById("detalleIndicadoresProductoSelect"),
+  detalleIndicadoresEsquemaSelect: document.getElementById("detalleIndicadoresEsquemaSelect"),
+  detalleIndicadoresTitle: document.getElementById("detalleIndicadoresTitle"),
+  detalleIndicadoresStatus: document.getElementById("detalleIndicadoresStatus"),
+  detalleIndicadoresWrapper: document.getElementById("detalleIndicadoresWrapper"),
+  detalleIndicadoresRefreshBtn: document.getElementById("detalleIndicadoresRefreshBtn"),
+  linksInteresProductoSelect: document.getElementById("linksInteresProductoSelect"),
+  linksInteresAccionSelect: document.getElementById("linksInteresAccionSelect"),
+  linksInteresSearchInput: document.getElementById("linksInteresSearchInput"),
+  linksInteresTitle: document.getElementById("linksInteresTitle"),
+  linksInteresStatus: document.getElementById("linksInteresStatus"),
+  linksInteresWrapper: document.getElementById("linksInteresWrapper"),
+  linksInteresRefreshBtn: document.getElementById("linksInteresRefreshBtn"),
   avanceComisionesTitle: document.getElementById("avanceComisionesTitle"),
   avanceComisionesStatus: document.getElementById("avanceComisionesStatus"),
   avanceComisionesWrapper: document.getElementById("avanceComisionesWrapper"),
@@ -90,6 +127,16 @@ let autoRefreshId = null;
 let currentUser = null;
 let currentGestionGroups = [];
 let currentGestionProduct = '';
+let currentDetalleIndicadoresGrid = [];
+let currentDetalleIndicadoresHeaderInfo = null;
+let currentDetalleIndicadoresProduct = 'Todo';
+let currentDetalleIndicadoresEsquema = 'Todo';
+let currentLinksInteresItems = [];
+let currentLinksInteresProduct = 'Todo';
+let currentLinksInteresAction = 'Todo';
+let currentLinksInteresSearch = '';
+let currentLinksInteresPage = 1;
+const LINKS_INTERES_PAGE_SIZE = 10;
 const tableRange = 'A1:ZZ5000';
 const excludedHeaders = new Set(['link manual']);
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
@@ -175,15 +222,16 @@ function configureLoginView() {
 }
 
 function hasAccessToSection(sectionId) {
-  return currentUser?.allowedSections?.includes(sectionId);
+  const sectionAlias = sectionAliasesById[sectionId] || sectionId;
+  return currentUser?.allowedSections?.includes(sectionAlias);
 }
 
 function resetVisualizadoState() {
   currentProduct = null;
   currentSheet = null;
-  elements.productSelect.innerHTML = '';
+  elements.productSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
   elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
-  elements.activeSheetTitle.textContent = 'Sin hoja seleccionada';
+  elements.activeSheetTitle.textContent = 'Sin producto seleccionado';
   elements.tableWrapper.innerHTML = '';
   elements.refreshDataBtn.disabled = true;
 }
@@ -217,6 +265,34 @@ function resetAvanceComisionesState() {
   elements.avanceComisionesStatus.textContent = 'Abre esta sección para cargar la información.';
   elements.avanceComisionesStatus.style.color = '#334155';
   elements.avanceComisionesWrapper.innerHTML = '';
+}
+
+function resetDetalleIndicadoresState() {
+  currentDetalleIndicadoresGrid = [];
+  currentDetalleIndicadoresHeaderInfo = null;
+  currentDetalleIndicadoresProduct = 'Todo';
+  currentDetalleIndicadoresEsquema = 'Todo';
+  elements.detalleIndicadoresProductoSelect.innerHTML = '<option value="Todo">Todo</option>';
+  elements.detalleIndicadoresEsquemaSelect.innerHTML = '<option value="Todo">Todo</option>';
+  elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
+  elements.detalleIndicadoresStatus.textContent = 'Abre esta sección para cargar la información.';
+  elements.detalleIndicadoresStatus.style.color = '#334155';
+  elements.detalleIndicadoresWrapper.innerHTML = '';
+}
+
+function resetLinksInteresState() {
+  currentLinksInteresItems = [];
+  currentLinksInteresProduct = 'Todo';
+  currentLinksInteresAction = 'Todo';
+  currentLinksInteresSearch = '';
+  currentLinksInteresPage = 1;
+  elements.linksInteresProductoSelect.innerHTML = '<option value="Todo">Todo</option>';
+  elements.linksInteresAccionSelect.innerHTML = '<option value="Todo">Todo</option>';
+  elements.linksInteresSearchInput.value = '';
+  elements.linksInteresTitle.textContent = linksInteresConfig.nombre;
+  elements.linksInteresStatus.textContent = 'Abre esta sección para cargar la información.';
+  elements.linksInteresStatus.style.color = '#334155';
+  elements.linksInteresWrapper.innerHTML = '';
 }
 
 function resetPoliticasState() {
@@ -261,6 +337,16 @@ function applyPermissions() {
   if (!hasAccessToSection('gestion-comisiones')) {
     document.getElementById('gestion-comisiones-section').classList.remove('active');
     resetGestionState();
+  }
+
+  if (!hasAccessToSection('detalle-indicadores')) {
+    document.getElementById('detalle-indicadores-section').classList.remove('active');
+    resetDetalleIndicadoresState();
+  }
+
+  if (!hasAccessToSection('links-interes')) {
+    document.getElementById('links-interes-section').classList.remove('active');
+    resetLinksInteresState();
   }
 
   if (!hasAccessToSection('avance-comisiones')) {
@@ -315,6 +401,8 @@ function clearSessionUi() {
   resetSeguimientoState();
   resetResumenAvanceState();
   resetGestionState();
+  resetDetalleIndicadoresState();
+  resetLinksInteresState();
   resetAvanceComisionesState();
   resetPoliticasState();
   resetRentabilidadState();
@@ -453,15 +541,19 @@ async function logout() {
 function loadProducts() {
   if (!hasAccessToSection('visualizado')) return;
 
-  elements.productSelect.innerHTML = "";
+  elements.productSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
   sheetConfig.forEach((item, idx) => {
     const option = document.createElement("option");
     option.value = idx;
     option.textContent = item.nombre;
     elements.productSelect.appendChild(option);
   });
-  elements.productSelect.selectedIndex = 0;
-  selectProduct();
+  elements.productSelect.value = '';
+  elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
+  elements.activeSheetTitle.textContent = 'Sin producto seleccionado';
+  elements.tableWrapper.innerHTML = '';
+  elements.refreshDataBtn.disabled = true;
+  setStatus('Selecciona un producto para ver sus hojas.');
 }
 
 async function fetchSheetNames(productId) {
@@ -523,7 +615,7 @@ function configureAutoRefresh() {
 async function fetchSheetData() {
   if (!currentProduct || !currentSheet) return;
 
-  setStatus(`Cargando datos: ${currentSheet} ...`, false);
+  setStatus('Cargando...', false);
 
   try {
     const primaryData = await fetchSingleSheetData(currentProduct.id, currentSheet);
@@ -676,6 +768,13 @@ function trimGrid(grid) {
 
 function normalizeHeaderText(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function formatDisplayLabel(value) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function rebuildGridWithColumns(grid, keptColumns) {
@@ -876,6 +975,7 @@ function appendTableToElement(grid, targetElement, title = '') {
   }
 
   const table = document.createElement('table');
+  table.className = 'app-data-table';
   const thead = document.createElement('thead');
   const tbody = document.createElement('tbody');
 
@@ -884,7 +984,7 @@ function appendTableToElement(grid, targetElement, title = '') {
     if (!cell || cell.covered) return;
 
     const th = document.createElement('th');
-    th.textContent = cell.text || '';
+    th.textContent = formatDisplayLabel(cell.text || '');
     applyCellStyles(th, cell, true);
 
     if (cell.colSpan > 1) {
@@ -974,6 +1074,34 @@ function findProductHeaderRowIndex(grid) {
   return (grid || []).findIndex(row => getCellText(row, 0).toLowerCase() === 'producto');
 }
 
+function getDistinctColumnValues(grid, headerRowIndex, columnIndex) {
+  const values = new Set();
+
+  for (let rowIndex = headerRowIndex + 1; rowIndex < grid.length; rowIndex++) {
+    const value = getCellText(grid[rowIndex], columnIndex);
+    if (value) {
+      values.add(value);
+    }
+  }
+
+  return Array.from(values);
+}
+
+function filterGridByColumnValues(grid, headerRowIndex, filters) {
+  if (!grid.length) return grid;
+
+  const filteredRows = grid.filter((row, rowIndex) => {
+    if (rowIndex <= headerRowIndex) return true;
+
+    return filters.every(({ columnIndex, value }) => {
+      if (!value || value === 'Todo') return true;
+      return getCellText(row, columnIndex) === value;
+    });
+  });
+
+  return trimGrid(filteredRows);
+}
+
 function getDetailProductOptions(grid, headerRowIndex) {
   const productSet = new Set();
 
@@ -1028,6 +1156,29 @@ function getGestionLinkMeta(label) {
   return { kind: 'colab', title: 'Colab' };
 }
 
+function normalizePlatformKind(label, href = '') {
+  const normalizedLabel = String(label || '').trim().toLowerCase();
+  const normalizedHref = String(href || '').trim().toLowerCase();
+
+  if (normalizedLabel.includes('power bi') || normalizedLabel.includes('powerbi')) {
+    return 'powerbi';
+  }
+
+  if (normalizedLabel.includes('query')) {
+    return 'query';
+  }
+
+  if (
+    normalizedLabel.includes('drive') ||
+    normalizedHref.includes('drive.google.com') ||
+    normalizedHref.includes('docs.google.com')
+  ) {
+    return 'drive';
+  }
+
+  return 'external';
+}
+
 function createSvgElement(tagName, attributes = {}) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', tagName);
   Object.entries(attributes).forEach(([key, value]) => {
@@ -1059,6 +1210,38 @@ function createGestionLinkIcon(kind) {
     svg.appendChild(createSvgElement('circle', { cx: '16', cy: '8', r: '4', fill: '#4285f4' }));
     svg.appendChild(createSvgElement('circle', { cx: '16', cy: '16', r: '4', fill: '#34a853' }));
     svg.appendChild(createSvgElement('rect', { x: '7', y: '10.8', width: '10', height: '2.4', rx: '1.2', fill: '#ea4335' }));
+  }
+
+  iconWrap.appendChild(svg);
+  return iconWrap;
+}
+
+function createPlatformIcon(kind) {
+  const iconWrap = document.createElement('span');
+  iconWrap.className = 'link-icon';
+
+  const svg = createSvgElement('svg', {
+    viewBox: '0 0 24 24',
+    'aria-hidden': 'true',
+    focusable: 'false'
+  });
+
+  if (kind === 'powerbi') {
+    svg.appendChild(createSvgElement('rect', { x: '4', y: '10', width: '3', height: '8', rx: '1', fill: '#f2c811' }));
+    svg.appendChild(createSvgElement('rect', { x: '9', y: '7', width: '3', height: '11', rx: '1', fill: '#f2c811' }));
+    svg.appendChild(createSvgElement('rect', { x: '14', y: '4', width: '3', height: '14', rx: '1', fill: '#f2c811' }));
+    svg.appendChild(createSvgElement('circle', { cx: '18.5', cy: '6', r: '1.8', fill: '#d6a800' }));
+  } else if (kind === 'drive') {
+    svg.appendChild(createSvgElement('path', { d: 'M9 3h6l6 10-3 5h-4l3-5-5-8H9z', fill: '#0f9d58' }));
+    svg.appendChild(createSvgElement('path', { d: 'M9 3 3 13l3 5 6-10z', fill: '#4285f4' }));
+    svg.appendChild(createSvgElement('path', { d: 'M6 18h12l3-5H9z', fill: '#f4b400' }));
+  } else if (kind === 'query') {
+    svg.appendChild(createSvgElement('rect', { x: '8', y: '4', width: '10', height: '13', rx: '2', fill: '#2563eb' }));
+    svg.appendChild(createSvgElement('rect', { x: '5', y: '7', width: '10', height: '13', rx: '2', fill: '#93c5fd' }));
+    svg.appendChild(createSvgElement('path', { d: 'M10 11h5v1.6h-5zm0 3h5v1.6h-5z', fill: '#fff' }));
+  } else {
+    svg.appendChild(createSvgElement('path', { d: 'M14 5h5v5h-2V8.41l-6.29 6.3-1.42-1.42 6.3-6.29H14V5z', fill: '#0f172a' }));
+    svg.appendChild(createSvgElement('path', { d: 'M6 7h5v2H8v7h7v-3h2v5H6V7z', fill: '#64748b' }));
   }
 
   iconWrap.appendChild(svg);
@@ -1384,7 +1567,93 @@ function getStatusTone(status) {
   return 'todo';
 }
 
-function renderAvanceComisionesSummary(summaryResult) {
+const AVANCE_DETAIL_FILTER_COLS = ['STATUS', 'RESPONSABLE', 'PRODUCTO', 'PERIODICIDAD', 'FECHA DE PAGO POR FINANZAS'];
+
+function buildAvanceDetailGrid(data) {
+  const fullGrid = buildGridFromSheet(data, 'A1:R5000');
+  if (!fullGrid.length) return [];
+
+  const datePattern = /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/;
+  const headerRow = fullGrid[0];
+  const dataRows = fullGrid.slice(1).filter(row => {
+    const text = String(row?.[0]?.text || '').trim();
+    return datePattern.test(text);
+  });
+
+  if (!dataRows.length) return [];
+  return filterEmptyColumns([headerRow, ...dataRows]);
+}
+
+function buildAvanceDetailFilterDefs(detailGrid) {
+  if (detailGrid.length < 2) return [];
+  const headerRow = detailGrid[0];
+  const defs = [];
+
+  headerRow.forEach((cell, colIndex) => {
+    const label = String(cell?.text || '').trim().toUpperCase();
+    if (!AVANCE_DETAIL_FILTER_COLS.includes(label)) return;
+
+    const values = new Set();
+    detailGrid.slice(1).forEach(row => {
+      const val = String(row?.[colIndex]?.text || '').trim();
+      if (val) values.add(val);
+    });
+
+    defs.push({ label: String(cell?.text || '').trim(), colIndex, values: [...values].sort() });
+  });
+
+  return defs;
+}
+
+function applyAvanceDetailFilters(detailGrid, activeFilters) {
+  if (!activeFilters.size) return detailGrid;
+  const headerRow = detailGrid[0];
+  const dataRows = detailGrid.slice(1).filter(row =>
+    [...activeFilters.entries()].every(([colIndex, value]) =>
+      String(row?.[colIndex]?.text || '').trim() === value
+    )
+  );
+  return [headerRow, ...dataRows];
+}
+
+function applyAvanceDetailStatusChips(container) {
+  const table = container.querySelector('.app-data-table');
+  if (!table) return;
+  const ths = [...table.querySelectorAll('thead tr th')];
+  const statusIdx = ths.findIndex(th => th.textContent.trim().toUpperCase() === 'STATUS');
+  if (statusIdx < 0) return;
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const td = [...tr.querySelectorAll('td')][statusIdx];
+    if (!td) return;
+    const value = td.textContent.trim();
+    td.textContent = '';
+    td.style.backgroundColor = '';
+    td.style.verticalAlign = 'middle';
+    const chip = document.createElement('span');
+    chip.className = `avance-chip is-${getStatusTone(value)}`;
+    chip.textContent = value;
+    td.appendChild(chip);
+  });
+}
+
+function capAvanceDetailWideColumns(container) {
+  const table = container.querySelector('.app-data-table');
+  if (!table) return;
+  const ths = [...table.querySelectorAll('thead tr th')];
+  ths.forEach((th, idx) => {
+    if (!th.textContent.trim().toUpperCase().includes('DESTINATARI')) return;
+    const maxPx = th.textContent.trim().length * 9 + 28;
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const td = [...tr.querySelectorAll('td')][idx];
+      if (!td) return;
+      td.style.maxWidth = `${maxPx}px`;
+      td.style.overflow = 'hidden';
+      td.style.textOverflow = 'ellipsis';
+    });
+  });
+}
+
+function renderAvanceComisionesSummary(summaryResult, detailGrid) {
   elements.avanceComisionesWrapper.innerHTML = '';
   elements.avanceComisionesTitle.textContent =
     `Avance ${summaryResult.periodType === 'trimestral' ? 'Trimestral' : 'Mensual'}`;
@@ -1405,6 +1674,114 @@ function renderAvanceComisionesSummary(summaryResult) {
     });
 
     elements.avanceComisionesWrapper.appendChild(secondaryGrid);
+  }
+
+  if (detailGrid && detailGrid.length) {
+    const detailSection = document.createElement('div');
+    detailSection.className = 'detail-section';
+
+    const detailButton = document.createElement('button');
+    detailButton.type = 'button';
+    detailButton.className = 'detail-toggle-btn';
+    detailButton.textContent = 'Mostrar detalle';
+
+    const detailContent = document.createElement('div');
+    detailContent.className = 'hidden';
+
+    const filterDefs = buildAvanceDetailFilterDefs(detailGrid);
+    const activeFilters = new Map();
+
+    const scrollContainer = document.createElement('div');
+    scrollContainer.className = 'avance-detail-scroll';
+
+    const renderFiltered = () => {
+      scrollContainer.innerHTML = '';
+      appendTableToElement(applyAvanceDetailFilters(detailGrid, activeFilters), scrollContainer);
+      applyAvanceDetailStatusChips(scrollContainer);
+      capAvanceDetailWideColumns(scrollContainer);
+    };
+
+    if (filterDefs.length) {
+      const filtersWrap = document.createElement('div');
+      filtersWrap.className = 'avance-detail-filters';
+
+      const selectMap = new Map();
+
+      const updateFilterOptions = () => {
+        filterDefs.forEach(({ colIndex }) => {
+          const sel = selectMap.get(colIndex);
+          if (!sel) return;
+          const currentValue = sel.value;
+          const othersFilters = new Map([...activeFilters].filter(([ci]) => ci !== colIndex));
+          const filteredRows = applyAvanceDetailFilters(detailGrid, othersFilters).slice(1);
+          const available = new Set();
+          filteredRows.forEach(row => {
+            const val = String(row?.[colIndex]?.text || '').trim();
+            if (val) available.add(val);
+          });
+          sel.innerHTML = '';
+          const allOpt = document.createElement('option');
+          allOpt.value = '';
+          allOpt.textContent = 'Todo';
+          sel.appendChild(allOpt);
+          [...available].sort().forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            sel.appendChild(opt);
+          });
+          if (available.has(currentValue)) {
+            sel.value = currentValue;
+          } else {
+            sel.value = '';
+            activeFilters.delete(colIndex);
+          }
+        });
+      };
+
+      filterDefs.forEach(({ label, colIndex, values }) => {
+        const group = document.createElement('div');
+        group.className = 'avance-detail-filter-group';
+
+        const lbl = document.createElement('label');
+        lbl.textContent = label;
+
+        const sel = document.createElement('select');
+        selectMap.set(colIndex, sel);
+        [{ text: 'Todo', value: '' }, ...values.map(v => ({ text: v, value: v }))].forEach(({ text, value }) => {
+          const opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = text;
+          sel.appendChild(opt);
+        });
+
+        sel.addEventListener('change', () => {
+          if (sel.value === '') activeFilters.delete(colIndex);
+          else activeFilters.set(colIndex, sel.value);
+          updateFilterOptions();
+          renderFiltered();
+        });
+
+        group.appendChild(lbl);
+        group.appendChild(sel);
+        filtersWrap.appendChild(group);
+      });
+
+      detailContent.appendChild(filtersWrap);
+    }
+
+    renderFiltered();
+    detailContent.appendChild(scrollContainer);
+
+    detailButton.addEventListener('click', () => {
+      const isHidden = detailContent.classList.contains('hidden');
+      detailContent.classList.toggle('hidden', !isHidden);
+      detailButton.textContent = isHidden ? 'Ocultar detalle' : 'Mostrar detalle';
+    });
+
+    detailSection.appendChild(detailButton);
+    detailSection.appendChild(detailContent);
+    elements.avanceComisionesWrapper.appendChild(detailSection);
   }
 }
 
@@ -1486,6 +1863,491 @@ function renderGestionLinks() {
 function selectGestionProduct(productName) {
   currentGestionProduct = productName;
   renderGestionLinks();
+}
+
+function renderDetalleIndicadoresFilters(grid, headerInfo) {
+  const productOptions = getDistinctColumnValues(grid, headerInfo.rowIndex, headerInfo.columns.producto);
+
+  elements.detalleIndicadoresProductoSelect.innerHTML = '';
+  ['Todo', ...productOptions].forEach(optionValue => {
+    const option = document.createElement('option');
+    option.value = optionValue;
+    option.textContent = optionValue;
+    elements.detalleIndicadoresProductoSelect.appendChild(option);
+  });
+
+  if (![...elements.detalleIndicadoresProductoSelect.options].some(option => option.value === currentDetalleIndicadoresProduct)) {
+    currentDetalleIndicadoresProduct = 'Todo';
+  }
+
+  if (![...elements.detalleIndicadoresEsquemaSelect.options].some(option => option.value === currentDetalleIndicadoresEsquema)) {
+    currentDetalleIndicadoresEsquema = 'Todo';
+  }
+
+  const filteredForProduct = filterGridByColumnValues(grid, headerInfo.rowIndex, [
+    {
+      columnIndex: headerInfo.columns.producto,
+      value: currentDetalleIndicadoresProduct
+    }
+  ]);
+  const esquemaOptions = getDistinctColumnValues(
+    filteredForProduct,
+    headerInfo.rowIndex,
+    headerInfo.columns.esquema
+  );
+
+  elements.detalleIndicadoresEsquemaSelect.innerHTML = '';
+  ['Todo', ...esquemaOptions].forEach(optionValue => {
+    const option = document.createElement('option');
+    option.value = optionValue;
+    option.textContent = optionValue;
+    elements.detalleIndicadoresEsquemaSelect.appendChild(option);
+  });
+
+  if (![...elements.detalleIndicadoresEsquemaSelect.options].some(option => option.value === currentDetalleIndicadoresEsquema)) {
+    currentDetalleIndicadoresEsquema = 'Todo';
+  }
+
+  elements.detalleIndicadoresProductoSelect.value = currentDetalleIndicadoresProduct;
+  elements.detalleIndicadoresEsquemaSelect.value = currentDetalleIndicadoresEsquema;
+}
+
+function renderDetalleIndicadoresTable() {
+  elements.detalleIndicadoresWrapper.innerHTML = '';
+
+  if (!currentDetalleIndicadoresGrid.length || !currentDetalleIndicadoresHeaderInfo) {
+    elements.detalleIndicadoresStatus.textContent = 'No hay datos cargados para filtrar.';
+    elements.detalleIndicadoresStatus.style.color = '#334155';
+    return;
+  }
+
+  const filteredGrid = filterGridByColumnValues(
+    currentDetalleIndicadoresGrid,
+    currentDetalleIndicadoresHeaderInfo.rowIndex,
+    [
+      {
+        columnIndex: currentDetalleIndicadoresHeaderInfo.columns.producto,
+        value: currentDetalleIndicadoresProduct
+      },
+      {
+        columnIndex: currentDetalleIndicadoresHeaderInfo.columns.esquema,
+        value: currentDetalleIndicadoresEsquema
+      }
+    ]
+  );
+
+  renderDetalleIndicadoresTableToElement(filteredGrid, elements.detalleIndicadoresWrapper);
+  const totalRows = Math.max(filteredGrid.length - (currentDetalleIndicadoresHeaderInfo.rowIndex + 1), 0);
+  elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
+  elements.detalleIndicadoresStatus.textContent = `${totalRows} filas visibles${currentDetalleIndicadoresProduct !== 'Todo' ? ` | Producto: ${currentDetalleIndicadoresProduct}` : ''}${currentDetalleIndicadoresEsquema !== 'Todo' ? ` | Esquema: ${currentDetalleIndicadoresEsquema}` : ''}.`;
+  elements.detalleIndicadoresStatus.style.color = '#334155';
+}
+
+function getHeaderMapForRow(row) {
+  const headerMap = new Map();
+
+  (row || []).forEach((cell, colIndex) => {
+    if (!cell || cell.covered) return;
+    const text = normalizeHeaderText(cell.text);
+    if (!text) return;
+    headerMap.set(text, colIndex);
+  });
+
+  return headerMap;
+}
+
+function renderDetalleIndicadoresTableToElement(grid, targetElement) {
+  targetElement.innerHTML = '';
+
+  if (!grid.length) {
+    appendTableToElement(grid, targetElement);
+    return;
+  }
+
+  const headerInfo = findHeaderColumnsByLabels(grid, ['fuente', 'plataforma']);
+  if (!headerInfo) {
+    appendTableToElement(grid, targetElement);
+    return;
+  }
+
+  const fuenteColumnIndex = headerInfo.columns.fuente;
+  const plataformaColumnIndex = headerInfo.columns.plataforma;
+  const hiddenColumns = new Set([plataformaColumnIndex]);
+  const table = document.createElement('table');
+  table.className = 'app-data-table';
+  const thead = document.createElement('thead');
+  const tbody = document.createElement('tbody');
+
+  grid.forEach((row, rowIndex) => {
+    const tr = document.createElement('tr');
+
+    row.forEach((cell, colIndex) => {
+      if (!cell || cell.covered || hiddenColumns.has(colIndex)) return;
+
+      const isHeader = rowIndex === headerInfo.rowIndex;
+      const element = document.createElement(isHeader ? 'th' : 'td');
+      applyCellStyles(element, cell, isHeader);
+
+      if (cell.colSpan > 1) {
+        const adjustedColSpan = Array.from({ length: cell.colSpan }, (_, offset) => colIndex + offset)
+          .filter(index => !hiddenColumns.has(index)).length;
+        if (!adjustedColSpan) return;
+        if (adjustedColSpan > 1) {
+          element.colSpan = adjustedColSpan;
+        }
+      }
+
+      if (cell.rowSpan > 1) {
+        element.rowSpan = cell.rowSpan;
+        element.style.verticalAlign = 'middle';
+      }
+
+      if (!isHeader && colIndex === fuenteColumnIndex) {
+        const platformLabel = getCellText(row, plataformaColumnIndex);
+        const href = getCellLink(row, fuenteColumnIndex) || (isLikelyUrl(cell.text) ? cell.text : '');
+        const platformKind = normalizePlatformKind(platformLabel, href);
+
+        if (href) {
+          const anchor = document.createElement('a');
+          const linkToneClass =
+            platformKind === 'powerbi'
+              ? 'link-card--powerbi'
+              : platformKind === 'drive'
+                ? 'link-card--drive'
+                : 'link-card--external';
+          anchor.className = `link-card link-card--icon ${linkToneClass}`;
+          anchor.href = href;
+          anchor.target = '_blank';
+          anchor.rel = 'noreferrer noopener';
+          anchor.title = platformLabel || 'Abrir fuente';
+          anchor.setAttribute('aria-label', platformLabel || 'Abrir fuente');
+          anchor.appendChild(createPlatformIcon(platformKind));
+          element.classList.add('cell-icon');
+          element.appendChild(anchor);
+        } else {
+          element.textContent = cell.text || '';
+        }
+      } else {
+        element.textContent = isHeader ? formatDisplayLabel(cell.text || '') : (cell.text || '');
+      }
+
+      tr.appendChild(element);
+    });
+
+    if (tr.children.length) {
+      (rowIndex <= headerInfo.rowIndex ? thead : tbody).appendChild(tr);
+    }
+  });
+
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  targetElement.appendChild(table);
+}
+
+function buildLinksInteresItems(grid) {
+  const headerInfo = findHeaderColumnsByLabels(grid, ['producto', 'link', 'plataforma']);
+  if (!headerInfo) {
+    throw new Error('No se encontraron las columnas producto, link y plataforma en LINK_DE_INTERES.');
+  }
+
+  const headerMap = getHeaderMapForRow(grid[headerInfo.rowIndex]);
+  const esquemaColumn = headerMap.get('esquema');
+  const nombreColumn = headerMap.get('nombre');
+  const detalleColumn = headerMap.get('detalle');
+  const descripcionColumn = headerMap.get('descripcion');
+
+  return grid
+    .slice(headerInfo.rowIndex + 1)
+    .map(row => {
+      const producto = getCellText(row, headerInfo.columns.producto);
+      const linkText = getCellText(row, headerInfo.columns.link);
+      const platformLabel = getCellText(row, headerInfo.columns.plataforma);
+
+      if (!producto || !linkText) return null;
+
+      const hyperlink = getCellLink(row, headerInfo.columns.link);
+      const href = hyperlink || (isLikelyUrl(linkText) ? linkText : '');
+      const platformKind = normalizePlatformKind(platformLabel, href);
+      const title =
+        getCellText(row, detalleColumn) ||
+        getCellText(row, nombreColumn) ||
+        getCellText(row, esquemaColumn) ||
+        getCellText(row, descripcionColumn) ||
+        'Link disponible';
+
+      return {
+        producto,
+        title,
+        platformKind,
+        platformLabel,
+        href,
+        copyValue: linkText
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderLinksInteresProductOptions(items) {
+  const productOptions = Array.from(new Set(items.map(item => item.producto)));
+  elements.linksInteresProductoSelect.innerHTML = '';
+
+  ['Todo', ...productOptions].forEach(optionValue => {
+    const option = document.createElement('option');
+    option.value = optionValue;
+    option.textContent = optionValue;
+    elements.linksInteresProductoSelect.appendChild(option);
+  });
+
+  if (![...elements.linksInteresProductoSelect.options].some(option => option.value === currentLinksInteresProduct)) {
+    currentLinksInteresProduct = 'Todo';
+  }
+
+  elements.linksInteresProductoSelect.value = currentLinksInteresProduct;
+}
+
+function getLinksInteresActionLabel(platformKind) {
+  if (platformKind === 'powerbi') return 'Power BI';
+  if (platformKind === 'drive') return 'Drive';
+  if (platformKind === 'query') return 'Query';
+  return 'Link externo';
+}
+
+function renderLinksInteresActionOptions(items) {
+  const actionOptions = Array.from(new Set(items.map(item => getLinksInteresActionLabel(item.platformKind))));
+  elements.linksInteresAccionSelect.innerHTML = '';
+
+  ['Todo', ...actionOptions].forEach(optionValue => {
+    const option = document.createElement('option');
+    option.value = optionValue;
+    option.textContent = optionValue;
+    elements.linksInteresAccionSelect.appendChild(option);
+  });
+
+  if (![...elements.linksInteresAccionSelect.options].some(option => option.value === currentLinksInteresAction)) {
+    currentLinksInteresAction = 'Todo';
+  }
+
+  elements.linksInteresAccionSelect.value = currentLinksInteresAction;
+}
+
+async function copyToClipboard(value) {
+  const text = String(value || '');
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const tempInput = document.createElement('textarea');
+  tempInput.value = text;
+  tempInput.setAttribute('readonly', 'readonly');
+  tempInput.style.position = 'fixed';
+  tempInput.style.opacity = '0';
+  document.body.appendChild(tempInput);
+  tempInput.select();
+  document.execCommand('copy');
+  document.body.removeChild(tempInput);
+}
+
+function showCopyToast(message, targetElement) {
+  const existingToast = document.querySelector('.copy-toast');
+  if (existingToast) {
+    existingToast.remove();
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'copy-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  const targetRect = targetElement?.getBoundingClientRect();
+  const toastRect = toast.getBoundingClientRect();
+  const viewportPadding = 12;
+  let top = targetRect
+    ? targetRect.top + (targetRect.height / 2) - (toastRect.height / 2)
+    : window.innerHeight - toastRect.height - 80;
+  let left = targetRect
+    ? targetRect.right + 12
+    : window.innerWidth - toastRect.width - 20;
+
+  if (left + toastRect.width > window.innerWidth - viewportPadding && targetRect) {
+    left = targetRect.left - toastRect.width - 12;
+  }
+
+  if (left < viewportPadding) {
+    left = viewportPadding;
+  }
+
+  if (top + toastRect.height > window.innerHeight - viewportPadding) {
+    top = window.innerHeight - toastRect.height - viewportPadding;
+  }
+
+  if (top < viewportPadding) {
+    top = viewportPadding;
+  }
+
+  toast.style.top = `${top}px`;
+  toast.style.left = `${left}px`;
+
+  window.requestAnimationFrame(() => {
+    toast.classList.add('is-visible');
+  });
+
+  window.setTimeout(() => {
+    toast.classList.remove('is-visible');
+    window.setTimeout(() => toast.remove(), 220);
+  }, 2000);
+}
+
+function renderLinksInteresCards() {
+  elements.linksInteresWrapper.innerHTML = '';
+  const normalizedSearch = currentLinksInteresSearch.trim().toLowerCase();
+
+  const items = currentLinksInteresItems.filter(item =>
+    (currentLinksInteresProduct === 'Todo' ? true : item.producto === currentLinksInteresProduct) &&
+    (currentLinksInteresAction === 'Todo' ? true : getLinksInteresActionLabel(item.platformKind) === currentLinksInteresAction) &&
+    (!normalizedSearch ? true : item.title.toLowerCase().includes(normalizedSearch))
+  );
+
+  if (!items.length) {
+    elements.linksInteresStatus.textContent = 'No hay links disponibles para el filtro seleccionado.';
+    elements.linksInteresStatus.style.color = '#334155';
+    currentLinksInteresPage = 1;
+    return;
+  }
+
+  const totalPages = Math.max(Math.ceil(items.length / LINKS_INTERES_PAGE_SIZE), 1);
+  if (currentLinksInteresPage > totalPages) {
+    currentLinksInteresPage = totalPages;
+  }
+  if (currentLinksInteresPage < 1) {
+    currentLinksInteresPage = 1;
+  }
+  const startIndex = (currentLinksInteresPage - 1) * LINKS_INTERES_PAGE_SIZE;
+  const paginatedItems = items.slice(startIndex, startIndex + LINKS_INTERES_PAGE_SIZE);
+
+  elements.linksInteresTitle.textContent = linksInteresConfig.nombre;
+  const activeFilters = [
+    currentLinksInteresProduct !== 'Todo' ? `Producto: ${currentLinksInteresProduct}` : '',
+    currentLinksInteresAction !== 'Todo' ? `Fuente: ${currentLinksInteresAction}` : '',
+    normalizedSearch ? `Detalle: ${currentLinksInteresSearch}` : ''
+  ].filter(Boolean);
+  elements.linksInteresStatus.textContent = `${items.length} links disponibles${activeFilters.length ? ` | ${activeFilters.join(' | ')}` : ''} | Página ${currentLinksInteresPage} de ${totalPages}.`;
+  elements.linksInteresStatus.style.color = '#334155';
+
+  const table = document.createElement('div');
+  table.className = 'interest-table';
+
+  const header = document.createElement('div');
+  header.className = 'interest-row interest-row--head';
+  ['Producto', 'Detalle', 'Accion'].forEach(label => {
+    const cell = document.createElement('div');
+    cell.className = 'interest-cell';
+    cell.textContent = label;
+    header.appendChild(cell);
+  });
+  table.appendChild(header);
+
+  paginatedItems.forEach(item => {
+    const row = document.createElement('article');
+    row.className = 'interest-row';
+
+    const productCell = document.createElement('div');
+    productCell.className = 'interest-cell';
+    productCell.textContent = item.producto;
+
+    const titleCell = document.createElement('div');
+    titleCell.className = 'interest-cell';
+    titleCell.textContent = item.title;
+
+    let actionElement;
+    if (item.platformKind === 'query') {
+      actionElement = document.createElement('button');
+      actionElement.type = 'button';
+      actionElement.className = 'link-card link-card--icon link-card--query';
+      actionElement.title = 'Copiar query';
+      actionElement.setAttribute('aria-label', 'Copiar query');
+      actionElement.addEventListener('click', async event => {
+        try {
+          await copyToClipboard(item.copyValue);
+          showCopyToast('Copiado', event.currentTarget);
+        } catch (error) {
+          elements.linksInteresStatus.textContent = `No se pudo copiar el query: ${error.message}`;
+          elements.linksInteresStatus.style.color = '#b91c1c';
+        }
+      });
+    } else {
+      actionElement = document.createElement('a');
+      const linkToneClass =
+        item.platformKind === 'powerbi'
+          ? 'link-card--powerbi'
+          : item.platformKind === 'drive'
+            ? 'link-card--drive'
+            : 'link-card--external';
+      actionElement.className = `link-card link-card--icon ${linkToneClass}`;
+      actionElement.href = item.href || '#';
+      actionElement.target = '_blank';
+      actionElement.rel = 'noreferrer noopener';
+      actionElement.title = item.platformLabel || 'Abrir link';
+      actionElement.setAttribute('aria-label', item.platformLabel || 'Abrir link');
+
+      if (!item.href) {
+        actionElement.classList.add('is-empty');
+        actionElement.removeAttribute('href');
+        actionElement.removeAttribute('target');
+        actionElement.removeAttribute('rel');
+      }
+    }
+
+    actionElement.appendChild(createPlatformIcon(item.platformKind));
+
+    const actionCell = document.createElement('div');
+    actionCell.className = 'interest-cell interest-cell--action';
+    actionCell.appendChild(actionElement);
+
+    row.appendChild(productCell);
+    row.appendChild(titleCell);
+    row.appendChild(actionCell);
+    table.appendChild(row);
+  });
+
+  elements.linksInteresWrapper.appendChild(table);
+
+  if (totalPages > 1) {
+    const pagination = document.createElement('div');
+    pagination.className = 'pagination-bar';
+
+    const previousButton = document.createElement('button');
+    previousButton.type = 'button';
+    previousButton.className = 'pagination-btn';
+    previousButton.textContent = 'Anterior';
+    previousButton.disabled = currentLinksInteresPage === 1;
+    previousButton.addEventListener('click', () => {
+      if (currentLinksInteresPage === 1) return;
+      currentLinksInteresPage -= 1;
+      renderLinksInteresCards();
+    });
+
+    const info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = `Mostrando ${startIndex + 1}-${Math.min(startIndex + LINKS_INTERES_PAGE_SIZE, items.length)} de ${items.length}`;
+
+    const nextButton = document.createElement('button');
+    nextButton.type = 'button';
+    nextButton.className = 'pagination-btn';
+    nextButton.textContent = 'Siguiente';
+    nextButton.disabled = currentLinksInteresPage === totalPages;
+    nextButton.addEventListener('click', () => {
+      if (currentLinksInteresPage === totalPages) return;
+      currentLinksInteresPage += 1;
+      renderLinksInteresCards();
+    });
+
+    pagination.appendChild(previousButton);
+    pagination.appendChild(info);
+    pagination.appendChild(nextButton);
+    elements.linksInteresWrapper.appendChild(pagination);
+  }
 }
 
 function appendCompactSummaryTable(rows, targetElement) {
@@ -1694,7 +2556,16 @@ function renderSummaryInfo(summaryGrid, detailGrid) {
 async function selectProduct() {
   const selectedIndex = elements.productSelect.value;
   const selection = sheetConfig[selectedIndex];
-  if (!selection) return;
+  if (!selection) {
+    currentProduct = null;
+    currentSheet = null;
+    elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
+    elements.activeSheetTitle.textContent = 'Sin producto seleccionado';
+    elements.tableWrapper.innerHTML = '';
+    elements.refreshDataBtn.disabled = true;
+    setStatus('Selecciona un producto para ver sus hojas.');
+    return;
+  }
 
   currentProduct = selection;
   currentSheet = null;
@@ -1716,7 +2587,7 @@ async function loadResumenAvanceData() {
   if (!hasAccessToSection('resumen-avance')) return;
 
   elements.resumenAvanceTitle.textContent = resumenAvanceConfig.nombre;
-  elements.resumenAvanceStatus.textContent = 'Cargando Resumen y Avance...';
+  elements.resumenAvanceStatus.textContent = 'Cargando...';
   elements.resumenAvanceStatus.style.color = '#334155';
 
   try {
@@ -1743,7 +2614,7 @@ async function loadSeguimientoSheets() {
   if (!hasAccessToSection('seguimiento')) return;
 
   try {
-    elements.seguimientoStatus.textContent = "Cargando hojas...";
+    elements.seguimientoStatus.textContent = "Cargando...";
     const sheetNames = await fetchSheetNames(seguimientoSheetConfig.id);
     
     elements.seguimientoSheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
@@ -1771,7 +2642,7 @@ function selectSeguimientoSheet(sheetName) {
 async function fetchSeguimientoSheetData() {
   if (!currentSeguimientoSheet) return;
 
-  elements.seguimientoStatus.textContent = `Cargando datos: ${currentSeguimientoSheet}...`;
+  elements.seguimientoStatus.textContent = 'Cargando...';
   elements.seguimientoStatus.style.color = '#334155';
 
   try {
@@ -1803,7 +2674,7 @@ async function loadGestionComisionesData() {
   if (!hasAccessToSection('gestion-comisiones')) return;
 
   elements.gestionTitle.textContent = gestionComisionesConfig.nombre;
-  elements.gestionStatus.textContent = 'Cargando Gestión de comisiones...';
+  elements.gestionStatus.textContent = 'Cargando...';
   elements.gestionStatus.style.color = '#334155';
   elements.gestionLinksWrapper.innerHTML = '';
   elements.gestionProductoSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
@@ -1822,8 +2693,8 @@ async function loadGestionComisionesData() {
     }
 
     renderGestionProductOptions(groups);
-    currentGestionProduct = groups[0].productName;
-    elements.gestionProductoSelect.value = currentGestionProduct;
+    currentGestionProduct = '';
+    elements.gestionProductoSelect.value = '';
     renderGestionLinks();
   } catch (err) {
     console.error('Error loadGestionComisionesData:', err.message);
@@ -1833,11 +2704,72 @@ async function loadGestionComisionesData() {
   }
 }
 
+async function loadDetalleIndicadoresData() {
+  if (!hasAccessToSection('detalle-indicadores')) return;
+
+  elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
+  elements.detalleIndicadoresStatus.textContent = 'Cargando...';
+  elements.detalleIndicadoresStatus.style.color = '#334155';
+  elements.detalleIndicadoresWrapper.innerHTML = '';
+
+  try {
+    const data = await fetchSingleSheetData(detalleIndicadoresConfig.id, detalleIndicadoresConfig.sheetName);
+    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
+    const headerInfo = findHeaderColumnsByLabels(grid, ['producto', 'esquema']);
+
+    if (!headerInfo) {
+      throw new Error('No se encontraron las columnas producto y esquema en DETALLE_INDICADORES.');
+    }
+
+    currentDetalleIndicadoresGrid = grid;
+    currentDetalleIndicadoresHeaderInfo = headerInfo;
+    renderDetalleIndicadoresFilters(grid, headerInfo);
+    renderDetalleIndicadoresTable();
+  } catch (err) {
+    console.error('Error loadDetalleIndicadoresData:', err.message);
+    elements.detalleIndicadoresStatus.textContent = `Error al leer datos: ${err.message}`;
+    elements.detalleIndicadoresStatus.style.color = '#b91c1c';
+    elements.detalleIndicadoresWrapper.innerHTML = '';
+  }
+}
+
+async function loadLinksInteresData() {
+  if (!hasAccessToSection('links-interes')) return;
+
+  elements.linksInteresTitle.textContent = linksInteresConfig.nombre;
+  elements.linksInteresStatus.textContent = 'Cargando...';
+  elements.linksInteresStatus.style.color = '#334155';
+  elements.linksInteresWrapper.innerHTML = '';
+
+  try {
+    const data = await fetchSingleSheetData(linksInteresConfig.id, linksInteresConfig.sheetName);
+    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
+    const items = buildLinksInteresItems(grid);
+
+    currentLinksInteresItems = items;
+    currentLinksInteresPage = 1;
+
+    if (!items.length) {
+      elements.linksInteresStatus.textContent = 'No se encontraron links visibles en LINK_DE_INTERES.';
+      return;
+    }
+
+    renderLinksInteresProductOptions(items);
+    renderLinksInteresActionOptions(items);
+    renderLinksInteresCards();
+  } catch (err) {
+    console.error('Error loadLinksInteresData:', err.message);
+    elements.linksInteresStatus.textContent = `Error al leer datos: ${err.message}`;
+    elements.linksInteresStatus.style.color = '#b91c1c';
+    elements.linksInteresWrapper.innerHTML = '';
+  }
+}
+
 async function loadAvanceComisionesData() {
   if (!hasAccessToSection('avance-comisiones')) return;
 
   elements.avanceComisionesTitle.textContent = avanceComisionesConfig.nombre;
-  elements.avanceComisionesStatus.textContent = 'Cargando Avance Comisiones...';
+  elements.avanceComisionesStatus.textContent = 'Cargando...';
   elements.avanceComisionesStatus.style.color = '#334155';
   elements.avanceComisionesWrapper.innerHTML = '';
 
@@ -1859,7 +2791,8 @@ async function loadAvanceComisionesData() {
       return;
     }
 
-    renderAvanceComisionesSummary(summary);
+    const detailGrid = buildAvanceDetailGrid(data);
+    renderAvanceComisionesSummary(summary, detailGrid);
   } catch (err) {
     console.error('Error loadAvanceComisionesData:', err.message);
     elements.avanceComisionesStatus.textContent = `Error al leer datos: ${err.message}`;
@@ -1922,6 +2855,16 @@ function changeSection(sectionId) {
     return;
   }
 
+  if (sectionId === 'detalle-indicadores') {
+    loadDetalleIndicadoresData();
+    return;
+  }
+
+  if (sectionId === 'links-interes') {
+    loadLinksInteresData();
+    return;
+  }
+
   if (sectionId === 'avance-comisiones') {
     loadAvanceComisionesData();
     return;
@@ -1952,6 +2895,34 @@ function init() {
   elements.refreshDataBtn.addEventListener("click", fetchSheetData);
   elements.gestionProductoSelect.addEventListener("change", (e) => selectGestionProduct(e.target.value));
   elements.gestionRefreshBtn.addEventListener("click", loadGestionComisionesData);
+  elements.detalleIndicadoresProductoSelect.addEventListener("change", (e) => {
+    currentDetalleIndicadoresProduct = e.target.value;
+    if (currentDetalleIndicadoresHeaderInfo && currentDetalleIndicadoresGrid.length) {
+      renderDetalleIndicadoresFilters(currentDetalleIndicadoresGrid, currentDetalleIndicadoresHeaderInfo);
+    }
+    renderDetalleIndicadoresTable();
+  });
+  elements.detalleIndicadoresEsquemaSelect.addEventListener("change", (e) => {
+    currentDetalleIndicadoresEsquema = e.target.value;
+    renderDetalleIndicadoresTable();
+  });
+  elements.detalleIndicadoresRefreshBtn.addEventListener("click", loadDetalleIndicadoresData);
+  elements.linksInteresProductoSelect.addEventListener("change", (e) => {
+    currentLinksInteresProduct = e.target.value;
+    currentLinksInteresPage = 1;
+    renderLinksInteresCards();
+  });
+  elements.linksInteresAccionSelect.addEventListener("change", (e) => {
+    currentLinksInteresAction = e.target.value;
+    currentLinksInteresPage = 1;
+    renderLinksInteresCards();
+  });
+  elements.linksInteresSearchInput.addEventListener("input", (e) => {
+    currentLinksInteresSearch = e.target.value;
+    currentLinksInteresPage = 1;
+    renderLinksInteresCards();
+  });
+  elements.linksInteresRefreshBtn.addEventListener("click", loadLinksInteresData);
   elements.avanceComisionesRefreshBtn.addEventListener("click", loadAvanceComisionesData);
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 

@@ -18,7 +18,7 @@ const AVANCE_COMISIONES_SPREADSHEET_ID =
   process.env.AVANCE_COMISIONES_SPREADSHEET_ID || '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM';
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
-  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab'],
+  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes'],
   [AVANCE_COMISIONES_SPREADSHEET_ID]: ['cronograma']
 };
 const ENV_PATH = path.join(__dirname, '.env');
@@ -97,13 +97,24 @@ const PORT = Number(process.env.PORT) || 3000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || 'Lax';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+const SECTION_DICTIONARY = {
+  'doc-a': 'avance-comisiones',
+  'doc-b': 'visualizado',
+  'doc-c': 'resumen-avance',
+  'doc-d': 'politicas',
+  'doc-e': 'rentabilidad',
+  'doc-f': 'seguimiento',
+  'doc-g': 'gestion-comisiones',
+  'doc-h': 'detalle-indicadores',
+  'doc-i': 'links-interes'
+};
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['avance-comisiones', 'visualizado', 'resumen-avance', 'politicas', 'rentabilidad', 'seguimiento', 'gestion-comisiones'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i'],
     allowedSpreadsheetIds: ['*']
   },
   usuario_gerencia: {
-    allowedSections: ['visualizado', 'politicas', 'rentabilidad', 'seguimiento'],
+    allowedSections: ['doc-b', 'doc-d', 'doc-e', 'doc-f'],
     allowedSpreadsheetIds: [...VISUALIZADO_SPREADSHEET_IDS, SEGUIMIENTO_SPREADSHEET_ID]
   }
 };
@@ -135,6 +146,7 @@ function loadDotEnv() {
     process.env[key] = value.replace(/\\n/g, '\n');
   });
 }
+
 
 function buildUserConfig() {
   const adminUsername = process.env.ADMIN_USERNAME;
