@@ -39,6 +39,11 @@ const linksInteresConfig = {
   id: gestionComisionesConfig.id,
   sheetName: 'LINK_DE_INTERES'
 };
+const organigramaConfig = {
+  nombre: 'Organigrama Comisional',
+  id: gestionComisionesConfig.id,
+  sheetName: 'ORGANIGRAMA_COMISIONAL'
+};
 const sectionDictionary = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -48,7 +53,8 @@ const sectionDictionary = {
   'doc-f': 'seguimiento',
   'doc-g': 'gestion-comisiones',
   'doc-h': 'detalle-indicadores',
-  'doc-i': 'links-interes'
+  'doc-i': 'links-interes',
+  'doc-j': 'organigrama'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -118,6 +124,10 @@ const elements = {
   avanceComisionesStatus: document.getElementById("avanceComisionesStatus"),
   avanceComisionesWrapper: document.getElementById("avanceComisionesWrapper"),
   avanceComisionesRefreshBtn: document.getElementById("avanceComisionesRefreshBtn"),
+  organigramaTitle: document.getElementById("organigramaTitle"),
+  organigramaStatus: document.getElementById("organigramaStatus"),
+  organigramaWrapper: document.getElementById("organigramaWrapper"),
+  organigramaRefreshBtn: document.getElementById("organigramaRefreshBtn"),
 };
 
 let currentProduct = null;
@@ -300,6 +310,13 @@ function resetAvanceComisionesState() {
   elements.avanceComisionesWrapper.innerHTML = '';
 }
 
+function resetOrganigramaState() {
+  elements.organigramaTitle.textContent = organigramaConfig.nombre;
+  elements.organigramaStatus.textContent = 'Abre esta sección para cargar la información.';
+  elements.organigramaStatus.style.color = '#334155';
+  elements.organigramaWrapper.innerHTML = '';
+}
+
 function resetDetalleIndicadoresState() {
   currentDetalleIndicadoresGrid = [];
   currentDetalleIndicadoresHeaderInfo = null;
@@ -439,6 +456,7 @@ function clearSessionUi() {
   resetDetalleIndicadoresState();
   resetLinksInteresState();
   resetAvanceComisionesState();
+  resetOrganigramaState();
   resetPoliticasState();
   resetRentabilidadState();
   elements.loginForm.reset();
@@ -2836,6 +2854,172 @@ async function loadAvanceComisionesData() {
   }
 }
 
+// ── Organigrama: tabla plana ─────────────────────────────────
+// Columnas esperadas en el sheet (en cualquier orden):
+//   Producto | PO | Dominio | Subdominio | Perfil | Canal | Area
+// Cada fila representa un perfil (hoja del árbol).
+// El árbol se reconstruye agrupando los valores únicos de izquierda a derecha.
+
+function parseOrgFlat(grid) {
+  if (grid.length < 2) return [];
+  const header = grid[0];
+  let productoCol = -1, poCol = -1, dominioCol = -1, subdominioCol = -1,
+      perfilCol = -1, canalCol = -1, areaCol = -1;
+
+  header.forEach((cell, i) => {
+    const label = String(cell?.text || '').trim().toUpperCase().replace(/[\s_\-]/g, '');
+    if (label === 'PRODUCTO') productoCol = i;
+    if (label === 'PO') poCol = i;
+    if (label === 'DOMINIO') dominioCol = i;
+    if (label === 'SUBDOMINIO') subdominioCol = i;
+    if (label === 'PERFIL') perfilCol = i;
+    if (label === 'CANAL') canalCol = i;
+    if (label === 'AREA' || label === 'ÁREA') areaCol = i;
+  });
+
+  const get = (row, col) => col >= 0 ? String(row[col]?.text || '').trim() : '';
+
+  return grid.slice(1)
+    .map(row => ({
+      producto:   get(row, productoCol),
+      po:         get(row, poCol),
+      dominio:    get(row, dominioCol),
+      subdominio: get(row, subdominioCol),
+      perfil:     get(row, perfilCol),
+      canal:      get(row, canalCol),
+      area:       get(row, areaCol),
+    }))
+    .filter(r => r.producto); // al menos Producto debe estar presente
+}
+
+function buildOrgTreeFromFlat(rows) {
+  const root = { name: 'HOLDING', tipoNodo: 'root', children: [] };
+  const seen = new Map([['_root_', root]]);
+
+  function getOrCreate(key, name, tipoNodo, parent, extra) {
+    if (!seen.has(key)) {
+      const node = Object.assign({ name, tipoNodo, children: [] }, extra);
+      seen.set(key, node);
+      parent.children.push(node);
+    }
+    return seen.get(key);
+  }
+
+  rows.forEach(r => {
+    let node = root;
+    if (r.producto)
+      node = getOrCreate(`P|${r.producto}`, r.producto, 'producto', node);
+    if (r.po)
+      node = getOrCreate(`PO|${r.producto}|${r.po}`, r.po, 'po', node);
+    if (r.dominio)
+      node = getOrCreate(`D|${r.producto}|${r.po}|${r.dominio}`, r.dominio, 'dominio', node);
+    if (r.subdominio)
+      node = getOrCreate(`S|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}`, r.subdominio, 'subdominio', node);
+    if (r.perfil)
+      getOrCreate(
+        `F|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}|${r.perfil}`,
+        r.perfil, 'perfil', node,
+        { canal: r.canal, area: r.area }
+      );
+  });
+
+  return root;
+}
+
+function renderOrgNode(node) {
+  const li = document.createElement('li');
+
+  const box = document.createElement('div');
+  box.className = `org-node org-node-${node.tipoNodo}`;
+  box.textContent = node.name;
+  li.appendChild(box);
+
+  if (node.children.length) {
+    const allLeaves = node.children.every(c => c.children.length === 0);
+    const ul = document.createElement('ul');
+    if (allLeaves) ul.classList.add('is-vertical');
+    node.children.forEach(child => ul.appendChild(renderOrgNode(child)));
+    li.appendChild(ul);
+  }
+
+  return li;
+}
+
+function renderOrgChart(root) {
+  const existing = elements.organigramaWrapper.querySelector('.org-chart-wrap');
+  if (existing) existing.remove();
+  if (!root || !root.children.length) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'org-chart-wrap';
+  const chart = document.createElement('div');
+  chart.className = 'org-chart';
+  const ul = document.createElement('ul');
+  ul.appendChild(renderOrgNode(root));
+  chart.appendChild(ul);
+  wrap.appendChild(chart);
+  elements.organigramaWrapper.appendChild(wrap);
+}
+
+function renderOrganigrama(allRows) {
+  elements.organigramaWrapper.innerHTML = '';
+  if (!allRows.length) {
+    elements.organigramaStatus.textContent = 'No se encontraron datos en la hoja.';
+    return;
+  }
+
+  // Filtro por producto
+  const products = [...new Set(allRows.map(r => r.producto).filter(Boolean))].sort();
+  if (products.length > 1) {
+    const bar = document.createElement('div');
+    bar.className = 'org-filter-bar';
+    const label = document.createElement('label');
+    label.className = 'org-filter-label';
+    label.textContent = 'Producto:';
+    const select = document.createElement('select');
+    select.className = 'org-filter-select';
+    [{ value: '', text: 'Todos' }, ...products.map(p => ({ value: p, text: p }))].forEach(({ value, text }) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      select.appendChild(opt);
+    });
+    select.addEventListener('change', () => {
+      const sel = select.value;
+      const filtered = sel ? allRows.filter(r => r.producto === sel) : allRows;
+      renderOrgChart(buildOrgTreeFromFlat(filtered));
+    });
+    bar.appendChild(label);
+    bar.appendChild(select);
+    elements.organigramaWrapper.appendChild(bar);
+  }
+
+  renderOrgChart(buildOrgTreeFromFlat(allRows));
+  elements.organigramaStatus.textContent = '';
+}
+
+async function loadOrganigramaData() {
+  if (!hasAccessToSection('organigrama')) return;
+  elements.organigramaTitle.textContent = organigramaConfig.nombre;
+  elements.organigramaStatus.textContent = 'Cargando...';
+  elements.organigramaStatus.style.color = '#334155';
+  elements.organigramaWrapper.innerHTML = '';
+  try {
+    const data = await fetchSingleSheetData(organigramaConfig.id, organigramaConfig.sheetName);
+    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
+    const rows = parseOrgFlat(grid);
+    if (!rows.length) {
+      elements.organigramaStatus.textContent = 'No se encontraron datos. Verificá que la hoja "ORGANIGRAMA_COMISIONAL" tenga las columnas: Producto | PO | Dominio | Subdominio | Perfil | Canal | Area';
+      return;
+    }
+    renderOrganigrama(rows);
+  } catch (err) {
+    console.error('Error loadOrganigramaData:', err.message);
+    elements.organigramaStatus.textContent = `Error al leer datos: ${err.message}`;
+    elements.organigramaStatus.style.color = '#b91c1c';
+    elements.organigramaWrapper.innerHTML = '';
+  }
+}
+
 function changeSection(sectionId) {
   if (!hasAccessToSection(sectionId)) return;
 
@@ -2912,6 +3096,11 @@ function changeSection(sectionId) {
 
   if (sectionId === 'rentabilidad') {
     resetRentabilidadState();
+    return;
+  }
+
+  if (sectionId === 'organigrama') {
+    loadOrganigramaData();
   }
 }
 
@@ -2959,6 +3148,7 @@ function init() {
   });
   elements.linksInteresRefreshBtn.addEventListener("click", loadLinksInteresData);
   elements.avanceComisionesRefreshBtn.addEventListener("click", loadAvanceComisionesData);
+  elements.organigramaRefreshBtn.addEventListener("click", loadOrganigramaData);
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 
   // Agregar navegación por secciones

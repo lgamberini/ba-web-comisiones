@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node ../back/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

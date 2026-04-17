@@ -4,6 +4,8 @@ const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 
+const STATIC_DIR = path.join(__dirname, '..', 'front');
+
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 const VISUALIZADO_SPREADSHEET_IDS = [
   '1pjrRfDZt6oV8hZIXE25y69UbRNj3YQwDroa0gSwnYig',
@@ -18,7 +20,7 @@ const AVANCE_COMISIONES_SPREADSHEET_ID =
   process.env.AVANCE_COMISIONES_SPREADSHEET_ID || '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM';
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
-  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes'],
+  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes', 'organigrama_comisional'],
   [AVANCE_COMISIONES_SPREADSHEET_ID]: ['cronograma']
 };
 const ENV_PATH = path.join(__dirname, '.env');
@@ -106,11 +108,12 @@ const SECTION_DICTIONARY = {
   'doc-f': 'seguimiento',
   'doc-g': 'gestion-comisiones',
   'doc-h': 'detalle-indicadores',
-  'doc-i': 'links-interes'
+  'doc-i': 'links-interes',
+  'doc-j': 'organigrama'
 };
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j'],
     allowedSpreadsheetIds: ['*']
   },
   usuario_gerencia: {
@@ -611,9 +614,9 @@ function resolveStaticPath(requestPath) {
   const normalizedPath = requestPath === '/' ? '/index.html' : requestPath;
   const decodedPath = decodeURIComponent(normalizedPath);
   const safePath = path.normalize(decodedPath).replace(/^(\.\.[/\\])+/, '');
-  const absolutePath = path.join(__dirname, safePath);
+  const absolutePath = path.join(STATIC_DIR, safePath);
 
-  if (!absolutePath.startsWith(__dirname)) {
+  if (!absolutePath.startsWith(STATIC_DIR)) {
     return null;
   }
 

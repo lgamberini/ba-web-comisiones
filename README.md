@@ -63,6 +63,13 @@ Si todavia tienes el formato anterior con `ADMIN_GOOGLE_EMAIL` y `GERENCIA_GOOGL
 
 ## Ejecución local
 
+> **Comando rápido para levantar el entorno de pruebas:**
+> ```bash
+> cd ".../WEB_COMISIONES"
+> node back/server.js
+> ```
+> Luego abrí `http://localhost:3000` en el navegador.
+
 Con un solo comando desde la raiz del proyecto:
 
 ```bash
