@@ -926,44 +926,120 @@ td.cell-icon {
 }
 
 
+/* ── Responsive: tablet (≤ 900px) ──────────────────────────── */
 @media (max-width: 900px) {
-  .header-content { grid-template-columns: 1fr; }
+  /* Header */
+  header { padding: 0.65rem 1rem; }
+  .header-content {
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+  }
   .header-brand { grid-column: 1; text-align: left; }
-  .session-bar { grid-column: 1; justify-self: start; align-items: flex-start; }
+  header h1 { font-size: 1.1rem; }
+  header p { font-size: 0.8rem; }
+  .session-bar {
+    grid-column: 2;
+    align-items: flex-end;
+    white-space: nowrap;
+  }
+
+  /* Sidebar → barra horizontal superior */
   .container-with-sidebar { flex-direction: column; }
-  .sidebar { width: 100%; min-height: auto; border-right: none; border-bottom: 1px solid #0f172a; padding: 0.5rem; }
-  .sidebar-nav { flex-direction: row; gap: 0.3rem; }
-  .nav-item { padding: 0.5rem 0.75rem; font-size: 0.9rem; }
-  .main-content { max-width: 100%; padding: 0.75rem; }
+  .sidebar {
+    width: 100% !important;
+    min-height: auto;
+    border-right: none;
+    border-bottom: 1px solid #0f172a;
+    padding: 0.4rem 0.5rem;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    flex-direction: row;
+    align-items: center;
+  }
+  .sidebar-toggle { display: none; }
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.25rem;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .sidebar-nav::-webkit-scrollbar { display: none; }
+  .nav-item {
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+  .nav-icon { width: auto; font-size: 1.1rem; }
+  .nav-label { font-size: 0.68rem; line-height: 1.2; }
+
+  /* Main content */
+  .main-content { max-width: 100% !important; padding: 0.75rem; }
+
+  /* Ajustes de secciones */
+  .avance-summary-secondary-grid { grid-template-columns: 1fr; }
+  .summary-compact-table-wrap { overflow-x: auto; }
 }
 
-@media (max-width: 720px) {
+/* ── Responsive: móvil (≤ 640px) ───────────────────────────── */
+@media (max-width: 640px) {
   main { width: 100%; }
+  header h1 { font-size: 1rem; }
+  header p { display: none; }
+
+  /* Controles */
   .controls { flex-direction: column; align-items: stretch; }
   .controls button, .controls select, .controls input { width: 100%; }
   .detail-filter { flex-direction: column; align-items: stretch; }
   .detail-filter select { min-width: 0; width: 100%; }
-  .summary-banner { font-size: 1.1rem; }
-  .summary-card-value { font-size: 1.6rem; }
-  .avance-summary-secondary-grid { grid-template-columns: 1fr; }
-  .iframe-container { height: 400px; }
-  .interest-row {
-    grid-template-columns: 1fr;
-  }
-  .interest-row--head {
-    display: none;
-  }
-  .interest-cell {
-    border-left: none;
-    border-top: 1px solid #e2e8f0;
-  }
-  .interest-row:not(.interest-row--head):first-child .interest-cell:first-child {
-    border-top: none;
-  }
-  .pagination-bar {
-    justify-content: space-between;
-    flex-wrap: wrap;
-  }
+
+  /* Cards */
+  .summary-banner { font-size: 0.95rem; }
+  .summary-card-value { font-size: 1.5rem; }
+  .summary-cards-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Tabla de interés: apilar verticalmente */
+  .interest-row { grid-template-columns: 1fr; }
+  .interest-row--head { display: none; }
+  .interest-cell { border-left: none; border-top: 1px solid #e2e8f0; }
+  .interest-row:not(.interest-row--head) .interest-cell:first-child { border-top: none; }
+
+  /* Paginación */
+  .pagination-bar { justify-content: space-between; flex-wrap: wrap; }
+
+  /* Iframe */
+  .document-frame { min-height: 60vh; }
+
+  /* Filtros avance */
+  .avance-detail-filters { flex-direction: column; }
+  .avance-detail-filter-group select { width: 100%; }
+
+  /* Organigrama: nodos más compactos */
+  .org-node { font-size: 0.72rem; padding: 0.35rem 0.65rem; }
+  .org-chart-wrap { padding: 1rem 0.25rem 1.5rem; }
+}
+
+/* ── Responsive: teléfono pequeño (≤ 420px) ─────────────────── */
+@media (max-width: 420px) {
+  /* Nav: solo íconos */
+  .nav-label { display: none; }
+  .nav-item { padding: 0.5rem; }
+  .nav-icon { font-size: 1.2rem; }
+
+  /* Header muy compacto */
+  header { padding: 0.5rem 0.75rem; }
+  header h1 { font-size: 0.9rem; }
+  .session-bar button { font-size: 0.65rem; padding: 0.15rem 0.4rem; }
+
+  /* Cards en columna */
+  .summary-cards-grid { grid-template-columns: 1fr; }
+  .links-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Organigrama ─────────────────────────────────────────── */
@@ -994,12 +1070,11 @@ td.cell-icon {
 .org-chart-wrap {
   overflow-x: auto;
   padding: 1.5rem 1rem 2rem;
-  display: flex;
-  justify-content: center;
 }
 .org-chart {
-  display: inline-flex;
+  width: fit-content;
   min-width: max-content;
+  margin: 0 auto;
 }
 .org-chart ul {
   padding-top: 1.5rem;
