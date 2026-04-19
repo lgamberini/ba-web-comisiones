@@ -6,14 +6,11 @@ const { URL } = require('url');
 
 const STATIC_DIR = path.join(__dirname, '..', 'front');
 
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-const VISUALIZADO_SPREADSHEET_IDS = [
-  '1pjrRfDZt6oV8hZIXE25y69UbRNj3YQwDroa0gSwnYig',
-  '1t2xYzutCL8azNBaGI4NX6xCnycbNwt24il_PgjZAuO8',
-  '1tvJ8pMj5UAeiIkh79ia4A_AA-8GhLu5TO5bUpAD1ddw',
-  '11lf7hDRySyzVSiSoRXofH5XpDTaDPUucZ0rHkjngvug',
-  '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc'
+const SCOPES = [
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
+const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem';
 const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs';
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg';
 const AVANCE_COMISIONES_SPREADSHEET_ID =
@@ -38,6 +35,9 @@ const MIME_TYPES = {
 
 let credentialsCache = null;
 let tokenCache = null;
+let esquemasComisionalesCache = null;
+let esquemasComisionalesCacheAt = 0;
+const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const activeSessions = new Map();
 
@@ -118,7 +118,7 @@ const ROLE_DEFINITIONS = {
   },
   usuario_gerencia: {
     allowedSections: ['doc-b', 'doc-d', 'doc-e', 'doc-f'],
-    allowedSpreadsheetIds: [...VISUALIZADO_SPREADSHEET_IDS, SEGUIMIENTO_SPREADSHEET_ID]
+    allowedSpreadsheetIds: [SEGUIMIENTO_SPREADSHEET_ID]
   }
 };
 const USER_CONFIG = buildUserConfig();
@@ -358,6 +358,67 @@ async function googleSheetsRequest(endpoint, params = {}) {
   return data;
 }
 
+async function googleDriveRequest(endpoint, params = {}) {
+  const accessToken = await getGoogleAccessToken();
+  const url = new URL(`https://www.googleapis.com/drive/v3/${endpoint}`);
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null) return;
+    url.searchParams.set(key, value);
+  });
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+  } catch (error) {
+    const cause = error.cause?.message ? ` Detalle: ${error.cause.message}` : '';
+    throw new Error(`No se pudo conectar con Google Drive.${cause}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Error al consultar Google Drive.');
+  }
+
+  return data;
+}
+
+function parseVisualizadoFileName(filename) {
+  const name = filename.replace(/\.[a-zA-Z0-9]{2,10}$/, '').trim();
+  const prefix = 'comisiones_';
+  const lower = name.toLowerCase();
+  const prefixIdx = lower.indexOf(prefix);
+  if (prefixIdx === -1) return name;
+
+  const afterPrefix = name.slice(prefixIdx + prefix.length);
+  const dashIdx = afterPrefix.indexOf(' - ');
+  if (dashIdx !== -1) return afterPrefix.slice(dashIdx + 3).trim();
+
+  const simpleDash = afterPrefix.indexOf('-');
+  if (simpleDash !== -1) return afterPrefix.slice(simpleDash + 1).trim();
+
+  return afterPrefix.trim();
+}
+
+async function getCachedEsquemasComisionales() {
+  const now = Date.now();
+  if (esquemasComisionalesCache && now - esquemasComisionalesCacheAt < ESQUEMAS_COMISIONALES_CACHE_TTL_MS) {
+    return esquemasComisionalesCache;
+  }
+
+  const response = await googleDriveRequest('files', {
+    q: `'${ESQUEMAS_COMISIONALES_FOLDER_ID}' in parents and trashed=false`,
+    fields: 'files(id,name)',
+    pageSize: '200'
+  });
+
+  esquemasComisionalesCache = response.files || [];
+  esquemasComisionalesCacheAt = now;
+  return esquemasComisionalesCache;
+}
+
 async function verifyGoogleIdToken(idToken) {
   if (!GOOGLE_LOGIN_CLIENT_ID) {
     throw new Error('El login con Google no esta configurado.');
@@ -425,8 +486,21 @@ function sanitizeUser(username) {
   };
 }
 
-function canAccessSpreadsheet(user, spreadsheetId) {
-  return user.allowedSpreadsheetIds.includes('*') || user.allowedSpreadsheetIds.includes(spreadsheetId);
+async function canAccessSpreadsheet(user, spreadsheetId) {
+  if (user.allowedSpreadsheetIds.includes('*')) return true;
+  if (user.allowedSpreadsheetIds.includes(spreadsheetId)) return true;
+
+  // For users with access to the visualizado section, also allow IDs from the Drive folder
+  if (user.allowedSections.includes('doc-b')) {
+    try {
+      const files = await getCachedEsquemasComisionales();
+      return files.some(f => f.id === spreadsheetId);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function getAllowedSheetNames(spreadsheetId) {
@@ -458,6 +532,10 @@ function resolveAllowedOrigin(req) {
     return requestOrigin;
   }
 
+  // Origin not in the allowed list — log it to make CORS issues easy to diagnose (skip if no origin header)
+  if (requestOrigin) {
+    console.warn(`[CORS] Origin bloqueado: "${requestOrigin}". Agrega este origen a ALLOWED_ORIGIN en Render.`);
+  }
   return allowedOrigins[0];
 }
 
@@ -724,6 +802,24 @@ function handleLogout(req, res) {
   sendJson(req, res, 200, { ok: true });
 }
 
+async function handleEsquemasComisionales(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.allowedSections.includes('doc-b')) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta sección.' });
+    return;
+  }
+
+  const rawFiles = await getCachedEsquemasComisionales();
+  const files = rawFiles.map(f => ({
+    id: f.id,
+    nombre: parseVisualizadoFileName(f.name)
+  }));
+
+  sendJson(req, res, 200, { files });
+}
+
 async function handleSheetNames(req, res, url) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -734,7 +830,7 @@ async function handleSheetNames(req, res, url) {
     return;
   }
 
-  if (!canAccessSpreadsheet(auth.user, spreadsheetId)) {
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
     sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta hoja.' });
     return;
   }
@@ -766,7 +862,7 @@ async function handleSpreadsheetMeta(req, res, url) {
     return;
   }
 
-  if (!canAccessSpreadsheet(auth.user, spreadsheetId)) {
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
     sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta hoja.' });
     return;
   }
@@ -793,7 +889,7 @@ async function handleSheetData(req, res, url) {
     return;
   }
 
-  if (!canAccessSpreadsheet(auth.user, spreadsheetId)) {
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
     sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta hoja.' });
     return;
   }
@@ -873,6 +969,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/logout') {
       handleLogout(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/esquemas-comisionales') {
+      await handleEsquemasComisionales(req, res);
       return;
     }
 

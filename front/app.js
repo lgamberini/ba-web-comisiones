@@ -1,9 +1,4 @@
-const sheetConfig = [
-  { nombre: "COMISIONES FACTORING", id: "1pjrRfDZt6oV8hZIXE25y69UbRNj3YQwDroa0gSwnYig" },
-  { nombre: "COMISIONES PGH", id: "1t2xYzutCL8azNBaGI4NX6xCnycbNwt24il_PgjZAuO8" },
-  { nombre: "COMISIONES GESTORA", id: "1tvJ8pMj5UAeiIkh79ia4A_AA-8GhLu5TO5bUpAD1ddw" },
-  { nombre: "COMISIONES CAMBIO SEGURO", id: "11lf7hDRySyzVSiSoRXofH5XpDTaDPUucZ0rHkjngvug" }
-];
+let sheetConfig = [];
 const resumenAvanceConfig = {
   nombre: "Seguimiento de Automatizaciones",
   id: "1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc",
@@ -112,6 +107,7 @@ const elements = {
   detalleIndicadoresTitle: document.getElementById("detalleIndicadoresTitle"),
   detalleIndicadoresStatus: document.getElementById("detalleIndicadoresStatus"),
   detalleIndicadoresWrapper: document.getElementById("detalleIndicadoresWrapper"),
+  detalleIndicadoresSearchInput: document.getElementById("detalleIndicadoresSearchInput"),
   detalleIndicadoresRefreshBtn: document.getElementById("detalleIndicadoresRefreshBtn"),
   linksInteresProductoSelect: document.getElementById("linksInteresProductoSelect"),
   linksInteresAccionSelect: document.getElementById("linksInteresAccionSelect"),
@@ -166,10 +162,13 @@ let currentDetalleIndicadoresGrid = [];
 let currentDetalleIndicadoresHeaderInfo = null;
 let currentDetalleIndicadoresProduct = 'Todo';
 let currentDetalleIndicadoresEsquema = 'Todo';
+let currentDetalleIndicadoresSearch = '';
 let currentLinksInteresItems = [];
 let currentLinksInteresProduct = 'Todo';
 let currentLinksInteresAction = 'Todo';
 let currentLinksInteresSearch = '';
+let currentDetalleIndicadoresPage = 1;
+const DETALLE_INDICADORES_PAGE_SIZE = 10;
 let currentLinksInteresPage = 1;
 const LINKS_INTERES_PAGE_SIZE = 10;
 const tableRange = 'A1:ZZ5000';
@@ -322,6 +321,9 @@ function resetDetalleIndicadoresState() {
   currentDetalleIndicadoresHeaderInfo = null;
   currentDetalleIndicadoresProduct = 'Todo';
   currentDetalleIndicadoresEsquema = 'Todo';
+  currentDetalleIndicadoresSearch = '';
+  currentDetalleIndicadoresPage = 1;
+  elements.detalleIndicadoresSearchInput.value = '';
   elements.detalleIndicadoresProductoSelect.innerHTML = '<option value="Todo">Todo</option>';
   elements.detalleIndicadoresEsquemaSelect.innerHTML = '<option value="Todo">Todo</option>';
   elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
@@ -591,8 +593,20 @@ async function logout() {
   }
 }
 
-function loadProducts() {
+async function loadProducts() {
   if (!hasAccessToSection('visualizado')) return;
+
+  elements.productSelect.innerHTML = '<option value="">-- Cargando archivos... --</option>';
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/esquemas-comisionales`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    sheetConfig = data.files || [];
+  } catch (err) {
+    console.error('Error loadProducts:', err.message);
+    sheetConfig = [];
+  }
 
   elements.productSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
   sheetConfig.forEach((item, idx) => {
@@ -672,7 +686,7 @@ async function fetchSheetData() {
 
   try {
     const primaryData = await fetchSingleSheetData(currentProduct.id, currentSheet);
-    const primaryGrid = buildGridFromSheet(primaryData, tableRange);
+    const primaryGrid = filterColumnsWithoutHeader(buildGridFromSheet(primaryData, tableRange));
 
     if (primaryGrid.length) {
       renderTable(primaryGrid);
@@ -898,6 +912,27 @@ function filterExcludedHeaderColumns(grid) {
     keptColumns.push(colIndex);
   }
 
+  return rebuildGridWithColumns(grid, keptColumns);
+}
+
+function filterColumnsWithoutHeader(grid) {
+  if (!grid.length) return grid;
+
+  const headerRow = grid[0];
+  const keptColumns = [];
+
+  for (let colIndex = 0; colIndex < headerRow.length; colIndex++) {
+    const cell = headerRow[colIndex];
+    if (cell && cell.covered) {
+      keptColumns.push(colIndex);
+      continue;
+    }
+    if (cell && String(cell.text || '').trim() !== '') {
+      keptColumns.push(colIndex);
+    }
+  }
+
+  if (!keptColumns.length || keptColumns.length === headerRow.length) return grid;
   return rebuildGridWithColumns(grid, keptColumns);
 }
 
@@ -1989,10 +2024,57 @@ function renderDetalleIndicadoresTable() {
     ]
   );
 
-  renderDetalleIndicadoresTableToElement(filteredGrid, elements.detalleIndicadoresWrapper);
-  const totalRows = Math.max(filteredGrid.length - (currentDetalleIndicadoresHeaderInfo.rowIndex + 1), 0);
+  const headerRowCount = currentDetalleIndicadoresHeaderInfo.rowIndex + 1;
+  const headerRows = filteredGrid.slice(0, headerRowCount);
+  const normalizedSearch = currentDetalleIndicadoresSearch.trim().toLowerCase();
+  const dataRows = filteredGrid.slice(headerRowCount).filter(row =>
+    !normalizedSearch || row.some(cell => !cell?.covered && String(cell?.text || '').toLowerCase().includes(normalizedSearch))
+  );
+  const totalRows = dataRows.length;
+  const totalPages = Math.max(Math.ceil(totalRows / DETALLE_INDICADORES_PAGE_SIZE), 1);
+  if (currentDetalleIndicadoresPage > totalPages) currentDetalleIndicadoresPage = totalPages;
+  if (currentDetalleIndicadoresPage < 1) currentDetalleIndicadoresPage = 1;
+  const startIndex = (currentDetalleIndicadoresPage - 1) * DETALLE_INDICADORES_PAGE_SIZE;
+  const paginatedGrid = [...headerRows, ...dataRows.slice(startIndex, startIndex + DETALLE_INDICADORES_PAGE_SIZE)];
+
+  renderDetalleIndicadoresTableToElement(paginatedGrid, elements.detalleIndicadoresWrapper);
+
+  if (totalPages > 1) {
+    const pagination = document.createElement('div');
+    pagination.className = 'pagination-bar';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = 'Anterior';
+    prevBtn.disabled = currentDetalleIndicadoresPage === 1;
+    prevBtn.addEventListener('click', () => {
+      currentDetalleIndicadoresPage -= 1;
+      renderDetalleIndicadoresTable();
+    });
+
+    const info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = `Mostrando ${startIndex + 1}-${Math.min(startIndex + DETALLE_INDICADORES_PAGE_SIZE, totalRows)} de ${totalRows}`;
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = 'Siguiente';
+    nextBtn.disabled = currentDetalleIndicadoresPage === totalPages;
+    nextBtn.addEventListener('click', () => {
+      currentDetalleIndicadoresPage += 1;
+      renderDetalleIndicadoresTable();
+    });
+
+    pagination.appendChild(prevBtn);
+    pagination.appendChild(info);
+    pagination.appendChild(nextBtn);
+    elements.detalleIndicadoresWrapper.appendChild(pagination);
+  }
+
   elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
-  elements.detalleIndicadoresStatus.textContent = `${totalRows} filas visibles${currentDetalleIndicadoresProduct !== 'Todo' ? ` | Producto: ${currentDetalleIndicadoresProduct}` : ''}${currentDetalleIndicadoresEsquema !== 'Todo' ? ` | Esquema: ${currentDetalleIndicadoresEsquema}` : ''}.`;
+  elements.detalleIndicadoresStatus.textContent = `${totalRows} filas visibles${currentDetalleIndicadoresProduct !== 'Todo' ? ` | Producto: ${currentDetalleIndicadoresProduct}` : ''}${currentDetalleIndicadoresEsquema !== 'Todo' ? ` | Esquema: ${currentDetalleIndicadoresEsquema}` : ''}${normalizedSearch ? ` | Búsqueda: ${currentDetalleIndicadoresSearch}` : ''} | Página ${currentDetalleIndicadoresPage} de ${totalPages}.`;
   elements.detalleIndicadoresStatus.style.color = '#334155';
 }
 
@@ -3121,6 +3203,7 @@ function init() {
   elements.gestionRefreshBtn.addEventListener("click", loadGestionComisionesData);
   elements.detalleIndicadoresProductoSelect.addEventListener("change", (e) => {
     currentDetalleIndicadoresProduct = e.target.value;
+    currentDetalleIndicadoresPage = 1;
     if (currentDetalleIndicadoresHeaderInfo && currentDetalleIndicadoresGrid.length) {
       renderDetalleIndicadoresFilters(currentDetalleIndicadoresGrid, currentDetalleIndicadoresHeaderInfo);
     }
@@ -3128,6 +3211,12 @@ function init() {
   });
   elements.detalleIndicadoresEsquemaSelect.addEventListener("change", (e) => {
     currentDetalleIndicadoresEsquema = e.target.value;
+    currentDetalleIndicadoresPage = 1;
+    renderDetalleIndicadoresTable();
+  });
+  elements.detalleIndicadoresSearchInput.addEventListener("input", (e) => {
+    currentDetalleIndicadoresSearch = e.target.value;
+    currentDetalleIndicadoresPage = 1;
     renderDetalleIndicadoresTable();
   });
   elements.detalleIndicadoresRefreshBtn.addEventListener("click", loadDetalleIndicadoresData);
