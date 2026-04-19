@@ -43,7 +43,7 @@ const activeSessions = new Map();
 
 // Rate limiting y login brute-force
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
-const RATE_LIMIT_MAX_REQUESTS = 200;
+const RATE_LIMIT_MAX_REQUESTS = 500;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000; // 15 minutos
 const ipRequestCounts = new Map();

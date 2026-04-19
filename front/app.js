@@ -676,7 +676,7 @@ function selectSheet(sheetName) {
 function configureAutoRefresh() {
   if (autoRefreshId) clearInterval(autoRefreshId);
   if (!currentSheet) return;
-  autoRefreshId = setInterval(fetchSheetData, 60000);
+  autoRefreshId = setInterval(fetchSheetData, 300000);
 }
 
 async function fetchSheetData() {
