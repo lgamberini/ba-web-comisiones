@@ -117,8 +117,8 @@ const ROLE_DEFINITIONS = {
     allowedSpreadsheetIds: ['*']
   },
   usuario_gerencia: {
-    allowedSections: ['doc-b', 'doc-d', 'doc-e', 'doc-f'],
-    allowedSpreadsheetIds: [SEGUIMIENTO_SPREADSHEET_ID]
+    allowedSections: ['doc-b', 'doc-d', 'doc-e', 'doc-f', 'doc-j'],
+    allowedSpreadsheetIds: [SEGUIMIENTO_SPREADSHEET_ID, GESTION_COMISIONES_SPREADSHEET_ID]
   }
 };
 const USER_CONFIG = buildUserConfig();
