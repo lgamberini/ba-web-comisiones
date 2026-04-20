@@ -42,7 +42,7 @@ const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000;
 const activeSessions = new Map();
 
 // Rate limiting y login brute-force
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 const RATE_LIMIT_MAX_REQUESTS = 500;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000; // 15 minutos
