@@ -617,6 +617,26 @@ main {
   color: #1d4ed8;
   cursor: pointer;
 }
+.link-card--excel {
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+.link-card--ppt {
+  background: linear-gradient(180deg, #fff1ee 0%, #ffe4de 100%);
+  border-color: #fca08a;
+  color: #9a1a04;
+}
+.link-card--word {
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.link-card--video {
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+  border-color: #fda4af;
+  color: #9f1239;
+}
 .link-card--drive {
   background: linear-gradient(180deg, #ecfeff 0%, #e0f2fe 100%);
   border-color: #7dd3fc;

@@ -1252,6 +1252,22 @@ function normalizePlatformKind(label, href = '') {
     return 'powerbi';
   }
 
+  if (normalizedLabel.includes('excel') || normalizedLabel.includes('xlsx')) {
+    return 'excel';
+  }
+
+  if (normalizedLabel.includes('ppt') || normalizedLabel.includes('powerpoint')) {
+    return 'ppt';
+  }
+
+  if (normalizedLabel.includes('word') || normalizedLabel.includes('docx')) {
+    return 'word';
+  }
+
+  if (normalizedLabel.includes('video') || normalizedLabel.includes('youtube') || normalizedLabel.includes('mp4')) {
+    return 'video';
+  }
+
   if (normalizedLabel.includes('query')) {
     return 'query';
   }
@@ -1273,6 +1289,19 @@ function createSvgElement(tagName, attributes = {}) {
     element.setAttribute(key, value);
   });
   return element;
+}
+
+function platformKindToCssClass(kind) {
+  const map = {
+    powerbi: 'link-card--powerbi',
+    excel: 'link-card--excel',
+    ppt: 'link-card--ppt',
+    word: 'link-card--word',
+    video: 'link-card--video',
+    drive: 'link-card--drive',
+    query: 'link-card--query',
+  };
+  return map[kind] || 'link-card--external';
 }
 
 function createGestionLinkIcon(kind) {
@@ -1319,6 +1348,23 @@ function createPlatformIcon(kind) {
     svg.appendChild(createSvgElement('rect', { x: '9', y: '7', width: '3', height: '11', rx: '1', fill: '#f2c811' }));
     svg.appendChild(createSvgElement('rect', { x: '14', y: '4', width: '3', height: '14', rx: '1', fill: '#f2c811' }));
     svg.appendChild(createSvgElement('circle', { cx: '18.5', cy: '6', r: '1.8', fill: '#d6a800' }));
+  } else if (kind === 'excel') {
+    svg.appendChild(createSvgElement('rect', { x: '3', y: '3', width: '18', height: '18', rx: '4', fill: '#107c41' }));
+    svg.appendChild(createSvgElement('rect', { x: '9', y: '3', width: '12', height: '18', rx: '0', fill: '#21a366' }));
+    svg.appendChild(createSvgElement('path', { d: 'M7 8h2l1.2 2.4L11.4 8h2l-2.1 4 2.3 4h-2l-1.4-2.6L8.8 16h-2l2.3-4L7 8z', fill: '#fff' }));
+  } else if (kind === 'ppt') {
+    svg.appendChild(createSvgElement('rect', { x: '3', y: '3', width: '18', height: '18', rx: '4', fill: '#c43e1c' }));
+    svg.appendChild(createSvgElement('rect', { x: '9', y: '3', width: '12', height: '18', rx: '0', fill: '#d24726' }));
+    svg.appendChild(createSvgElement('rect', { x: '6', y: '8', width: '5', height: '1.5', rx: '0.75', fill: '#fff' }));
+    svg.appendChild(createSvgElement('rect', { x: '6', y: '11', width: '5', height: '1.5', rx: '0.75', fill: '#fff' }));
+    svg.appendChild(createSvgElement('rect', { x: '6', y: '14', width: '3', height: '1.5', rx: '0.75', fill: '#fff' }));
+  } else if (kind === 'word') {
+    svg.appendChild(createSvgElement('rect', { x: '3', y: '3', width: '18', height: '18', rx: '4', fill: '#185abd' }));
+    svg.appendChild(createSvgElement('rect', { x: '9', y: '3', width: '12', height: '18', rx: '0', fill: '#2b7cd3' }));
+    svg.appendChild(createSvgElement('path', { d: 'M6 8h1.5l1 5 1.2-5h1.3l1.2 5 1-5H14l-1.8 8H10.8L9.5 11l-1.3 5H6.8L5 8z', fill: '#fff' }));
+  } else if (kind === 'video') {
+    svg.appendChild(createSvgElement('rect', { x: '3', y: '5', width: '18', height: '14', rx: '3', fill: '#dc2626' }));
+    svg.appendChild(createSvgElement('path', { d: 'M10 9l6 3-6 3V9z', fill: '#fff' }));
   } else if (kind === 'drive') {
     svg.appendChild(createSvgElement('path', { d: 'M9 3h6l6 10-3 5h-4l3-5-5-8H9z', fill: '#0f9d58' }));
     svg.appendChild(createSvgElement('path', { d: 'M9 3 3 13l3 5 6-10z', fill: '#4285f4' }));
@@ -2144,12 +2190,7 @@ function renderDetalleIndicadoresTableToElement(grid, targetElement) {
 
         if (href) {
           const anchor = document.createElement('a');
-          const linkToneClass =
-            platformKind === 'powerbi'
-              ? 'link-card--powerbi'
-              : platformKind === 'drive'
-                ? 'link-card--drive'
-                : 'link-card--external';
+          const linkToneClass = platformKindToCssClass(platformKind);
           anchor.className = `link-card link-card--icon ${linkToneClass}`;
           anchor.href = href;
           anchor.target = '_blank';
@@ -2242,6 +2283,10 @@ function renderLinksInteresProductOptions(items) {
 
 function getLinksInteresActionLabel(platformKind) {
   if (platformKind === 'powerbi') return 'Power BI';
+  if (platformKind === 'excel') return 'Excel';
+  if (platformKind === 'ppt') return 'PowerPoint';
+  if (platformKind === 'word') return 'Word';
+  if (platformKind === 'video') return 'Video';
   if (platformKind === 'drive') return 'Drive';
   if (platformKind === 'query') return 'Query';
   return 'Link externo';
@@ -2413,12 +2458,7 @@ function renderLinksInteresCards() {
       });
     } else {
       actionElement = document.createElement('a');
-      const linkToneClass =
-        item.platformKind === 'powerbi'
-          ? 'link-card--powerbi'
-          : item.platformKind === 'drive'
-            ? 'link-card--drive'
-            : 'link-card--external';
+      const linkToneClass = platformKindToCssClass(item.platformKind);
       actionElement.className = `link-card link-card--icon ${linkToneClass}`;
       actionElement.href = item.href || '#';
       actionElement.target = '_blank';
