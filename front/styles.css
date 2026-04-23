@@ -1397,17 +1397,47 @@ td.cell-icon {
   box-shadow: none;
 }
 
-/* ── Hijos hoja: apilados verticalmente ────────────────────── */
+/* ── Hijos hoja: espina izquierda con ramas horizontales ─────── */
 .org-chart ul.is-vertical {
   flex-direction: column;
-  align-items: center;
-  gap: 5px;
+  align-items: flex-start;
+  gap: 0;
   padding-top: 1.5rem;
+  padding-left: 1.5rem; /* ajustado por JS tras el render */
+}
+/* conector desde el padre: posición calculada por JS via --vspine-x */
+.org-chart ul ul.is-vertical::before {
+  left: var(--vspine-x, 50%);
 }
 .org-chart ul.is-vertical > li {
-  padding: 0;
+  padding: 0.3rem 0;
+  display: flex;
+  align-items: center;
 }
-.org-chart ul.is-vertical > li::before,
+/* rama horizontal solamente (sin border-left para no crear cuadro) */
+.org-chart ul.is-vertical > li::before {
+  content: '';
+  position: absolute;
+  left: -1.5rem;
+  top: 50%;
+  width: 1.5rem;
+  height: 0;
+  border-top: 2px solid #94a3b8;
+  display: block;
+  transform: translateY(-1px);
+}
+/* tramo vertical de la espina: longitud completa para todos los ítems */
 .org-chart ul.is-vertical > li::after {
-  display: none;
+  content: '';
+  position: absolute;
+  left: -1.5rem;
+  top: 0;
+  width: 0;
+  height: 100%;
+  border-left: 2px solid #94a3b8;
+  display: block;
+}
+/* último ítem: espina solo hasta el centro, sin línea fantasma hacia abajo */
+.org-chart ul.is-vertical > li:last-child::after {
+  height: 50%;
 }

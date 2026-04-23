@@ -3680,10 +3680,19 @@ function buildOrgTreeFromFlat(rows) {
     if (r.subdominio)
       node = getOrCreate(`S|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}`, r.subdominio, 'subdominio', node);
     if (r.perfil)
-      getOrCreate(
+      node = getOrCreate(
         `F|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}|${r.perfil}`,
-        r.perfil, 'perfil', node,
-        { canal: r.canal, area: r.area }
+        r.perfil, 'perfil', node
+      );
+    if (r.canal)
+      node = getOrCreate(
+        `C|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}|${r.perfil}|${r.canal}`,
+        r.canal, 'canal', node
+      );
+    if (r.area)
+      getOrCreate(
+        `A|${r.producto}|${r.po}|${r.dominio}|${r.subdominio}|${r.perfil}|${r.canal}|${r.area}`,
+        r.area, 'area', node
       );
   });
 
@@ -3695,7 +3704,14 @@ function renderOrgNode(node) {
 
   const box = document.createElement('div');
   box.className = `org-node org-node-${node.tipoNodo}`;
-  box.textContent = node.name;
+  const match = node.name.match(/^(.*?)\s*(\(.*\))\s*$/s);
+  if (match) {
+    box.appendChild(document.createTextNode(match[1]));
+    box.appendChild(document.createElement('br'));
+    box.appendChild(document.createTextNode(match[2]));
+  } else {
+    box.textContent = node.name;
+  }
   li.appendChild(box);
 
   if (node.children.length) {
@@ -3707,6 +3723,21 @@ function renderOrgNode(node) {
   }
 
   return li;
+}
+
+function alignVerticalSpines(wrapper) {
+  const ARM = 24; // px, igual a 1.5rem
+  wrapper.querySelectorAll('.org-chart ul.is-vertical').forEach(ul => {
+    const parentNode = ul.parentElement?.querySelector(':scope > .org-node');
+    if (!parentNode) return;
+    const nodeRect = parentNode.getBoundingClientRect();
+    const ulRect = ul.getBoundingClientRect();
+    // spineX0: distancia del borde izq del ul al centro del nodo padre
+    const spineX0 = Math.max(0, nodeRect.left + nodeRect.width / 2 - ulRect.left);
+    // Al cambiar padding-left, el ul se recentra: la espina queda en 2*spineX0 del nuevo borde izq
+    ul.style.paddingLeft = (2 * spineX0 + ARM) + 'px';
+    ul.style.setProperty('--vspine-x', (2 * spineX0) + 'px');
+  });
 }
 
 function renderOrgChart(root) {
@@ -3722,6 +3753,7 @@ function renderOrgChart(root) {
   chart.appendChild(ul);
   wrap.appendChild(chart);
   elements.organigramaWrapper.appendChild(wrap);
+  requestAnimationFrame(() => alignVerticalSpines(elements.organigramaWrapper));
 }
 
 function renderOrganigrama(allRows) {
