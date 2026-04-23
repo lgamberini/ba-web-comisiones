@@ -171,6 +171,13 @@ let currentDetalleIndicadoresPage = 1;
 const DETALLE_INDICADORES_PAGE_SIZE = 10;
 let currentLinksInteresPage = 1;
 const LINKS_INTERES_PAGE_SIZE = 10;
+let currentSeguimientoPage = 1;
+const SEGUIMIENTO_PAGE_SIZE = 10;
+let currentSeguimientoGrid = [];
+let currentSeguimientoIsEditMode = false;
+const currentSeguimientoPendingChanges = new Map();
+const currentSeguimientoValidationMap = new Map();
+let currentSeguimientoDraftRows = [];
 const tableRange = 'A1:ZZ5000';
 const excludedHeaders = new Set(['link manual']);
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
@@ -733,6 +740,19 @@ function columnLabelToIndex(label) {
     .reduce((acc, char) => acc * 26 + (char.charCodeAt(0) - 64), 0) - 1;
 }
 
+function columnIndexToLabel(index) {
+  let current = Number(index) + 1;
+  let label = '';
+
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    current = Math.floor((current - 1) / 26);
+  }
+
+  return label;
+}
+
 function createCell(value = '') {
   return {
     text: value,
@@ -842,6 +862,122 @@ function formatDisplayLabel(value) {
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function prepareGridForEditing(grid, headerRowCount = 1) {
+  if (!grid.length) return grid;
+
+  for (let rowIndex = 0; rowIndex < grid.length; rowIndex += 1) {
+    const row = grid[rowIndex] || [];
+    let assignedSheetRow = false;
+    row.forEach((cell, colIndex) => {
+      if (!cell || cell.covered) return;
+      if (rowIndex < headerRowCount) {
+        cell._originalColIndex = colIndex;
+      } else if (!assignedSheetRow) {
+        cell._sheetRowIndex = rowIndex + 1;
+        assignedSheetRow = true;
+      }
+    });
+  }
+
+  return grid;
+}
+
+function cloneSeguimientoDraftRow(templateRow, draftRowId) {
+  const clonedRow = (templateRow || []).map(cell => {
+    if (!cell) return null;
+    return {
+      ...cell,
+      text: cell.covered ? cell.text : '',
+      _sheetRowIndex: undefined
+    };
+  });
+
+  clonedRow._draftRowId = draftRowId;
+  return clonedRow;
+}
+
+function buildEditableColMapFromHeaderRow(headerRow, allowedColumns = null) {
+  const map = new Map();
+
+  (headerRow || []).forEach((cell, colIndex) => {
+    if (!cell || cell.covered) return;
+    const originalColIndex = cell._originalColIndex ?? colIndex;
+    const colLetter = columnIndexToLabel(originalColIndex);
+    if (allowedColumns && !allowedColumns.has(colLetter)) return;
+    map.set(colIndex, colLetter);
+  });
+
+  return map;
+}
+
+function getSeguimientoHeaderRowCount(grid) {
+  if (!grid.length) return 1;
+
+  const datePattern = /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/;
+  const firstDataRowIndex = grid.findIndex((row, rowIndex) => {
+    if (rowIndex === 0) return false;
+    const firstVisibleCell = (row || []).find(cell => cell && !cell.covered);
+    const value = String(firstVisibleCell?.text || '').trim();
+    return datePattern.test(value);
+  });
+
+  return firstDataRowIndex > 0 ? firstDataRowIndex : Math.min(grid.length, 2);
+}
+
+function createEditableControl(currentValue, options, onChange, controlConfig = {}) {
+  const normalizedCurrentValue = String(currentValue || '');
+  const {
+    variant = 'default',
+    cell = null
+  } = controlConfig;
+  const cellBackgroundColor = googleColorToCss(cell?.backgroundColor) || '#fff';
+
+  if (options.length) {
+    const select = document.createElement('select');
+    select.className = 'avance-editable-select';
+    if (variant === 'sheet') {
+      select.classList.add('editable-control--sheet');
+      select.style.backgroundColor = cellBackgroundColor;
+    }
+
+    if (!normalizedCurrentValue) {
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '— seleccionar —';
+      select.appendChild(emptyOpt);
+    }
+
+    if (normalizedCurrentValue && !options.includes(normalizedCurrentValue)) {
+      const currentOpt = document.createElement('option');
+      currentOpt.value = normalizedCurrentValue;
+      currentOpt.textContent = normalizedCurrentValue;
+      select.appendChild(currentOpt);
+    }
+
+    options.forEach(opt => {
+      const option = document.createElement('option');
+      option.value = opt;
+      option.textContent = opt;
+      select.appendChild(option);
+    });
+
+    select.value = normalizedCurrentValue;
+    select.addEventListener('change', () => onChange(select.value));
+    return select;
+  }
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = normalizedCurrentValue;
+  input.className = 'avance-editable-input';
+  if (variant === 'sheet') {
+    input.classList.add('editable-control--sheet');
+    input.style.backgroundColor = cellBackgroundColor;
+  }
+  input.addEventListener('input', () => onChange(input.value));
+  return input;
 }
 
 function rebuildGridWithColumns(grid, keptColumns) {
@@ -1707,12 +1843,22 @@ function buildAvanceDetailGrid(data) {
   const fullGrid = buildGridFromSheet(data, 'A1:R5000');
   if (!fullGrid.length) return [];
 
+  // Tag header cells with original column index so editable cols survive filterEmptyColumns
+  fullGrid[0].forEach((cell, colIndex) => {
+    if (cell) cell._originalColIndex = colIndex;
+  });
+
   const datePattern = /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/;
   const headerRow = fullGrid[0];
-  const dataRows = fullGrid.slice(1).filter(row => {
+  const dataRows = fullGrid.slice(1).reduce((acc, row, idx) => {
     const text = String(row?.[0]?.text || '').trim();
-    return datePattern.test(text);
-  });
+    if (datePattern.test(text)) {
+      // Store 1-based sheet row index for write operations (idx is 0-based within slice(1))
+      if (row[0]) row[0]._sheetRowIndex = idx + 2;
+      acc.push(row);
+    }
+    return acc;
+  }, []);
 
   if (!dataRows.length) return [];
   return filterEmptyColumns([headerRow, ...dataRows]);
@@ -1787,6 +1933,133 @@ function capAvanceDetailWideColumns(container) {
   });
 }
 
+const AVANCE_EDITABLE_ORIGINAL_COLS = { 1: 'B', 14: 'O', 15: 'P' };
+
+function buildEditableColMap(headerRow) {
+  const map = new Map();
+  (headerRow || []).forEach((cell, idx) => {
+    if (cell && AVANCE_EDITABLE_ORIGINAL_COLS[cell._originalColIndex] != null) {
+      map.set(idx, AVANCE_EDITABLE_ORIGINAL_COLS[cell._originalColIndex]);
+    }
+  });
+  return map;
+}
+
+function renderAvanceEditableTable(grid, container, editableColMap, pendingChanges, validationMap = new Map(), options = {}) {
+  container.innerHTML = '';
+  if (!grid.length) return;
+
+  const {
+    headerRowCount = 1,
+    footerAction = null,
+    controlVariant = 'default',
+    editableCellClassName = 'avance-editable-cell'
+  } = options;
+
+  const table = document.createElement('table');
+  table.className = 'app-data-table';
+
+  const thead = document.createElement('thead');
+  grid.slice(0, headerRowCount).forEach(headerRow => {
+    const trHead = document.createElement('tr');
+    headerRow.forEach((cell, colIdx) => {
+      if (!cell || cell.covered) return;
+      const th = document.createElement('th');
+      th.textContent = formatDisplayLabel(cell.text || '');
+      applyCellStyles(th, cell, true);
+      if (cell.colSpan > 1) { th.colSpan = cell.colSpan; th.style.textAlign = 'center'; }
+      if (cell.rowSpan > 1) { th.rowSpan = cell.rowSpan; th.style.verticalAlign = 'middle'; }
+      if (editableColMap.has(colIdx) && headerRowCount === 1) th.classList.add('avance-editable-header');
+      trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+  });
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  grid.slice(headerRowCount).forEach(row => {
+    const sheetRowIndex = row.find(cell => cell && !cell.covered && cell._sheetRowIndex)?._sheetRowIndex;
+    const draftRowId = row._draftRowId || null;
+    const tr = document.createElement('tr');
+    row.forEach((cell, colIdx) => {
+      if (!cell || cell.covered) return;
+      const td = document.createElement('td');
+      applyCellStyles(td, cell);
+      if (cell.colSpan > 1) td.colSpan = cell.colSpan;
+      if (cell.rowSpan > 1) { td.rowSpan = cell.rowSpan; td.style.verticalAlign = 'middle'; }
+
+      const colLetter = editableColMap.get(colIdx);
+      const changeKey = draftRowId
+        ? `draft:${draftRowId}:${colLetter}`
+        : (sheetRowIndex ? `${sheetRowIndex}:${colLetter}` : '');
+
+      if (colLetter && changeKey) {
+        const currentValue = pendingChanges.has(changeKey) ? pendingChanges.get(changeKey) : (cell.text || '');
+        const options = validationMap.get(colLetter) || [];
+        td.appendChild(
+          createEditableControl(
+            currentValue,
+            options,
+            value => pendingChanges.set(changeKey, value),
+            { variant: controlVariant, cell }
+          )
+        );
+        if (editableCellClassName) td.classList.add(editableCellClassName);
+      } else {
+        td.textContent = cell.text || '';
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  if (footerAction?.label && typeof footerAction.onClick === 'function') {
+    const actions = document.createElement('div');
+    actions.className = 'seguimiento-new-row-actions';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'avance-edit-bar-btn avance-edit-bar-btn--save';
+    button.textContent = footerAction.label;
+    button.addEventListener('click', footerAction.onClick);
+
+    actions.appendChild(button);
+    container.appendChild(actions);
+  }
+}
+
+function showConfirmModal(message, onConfirm, onCancel) {
+  let overlay = document.getElementById('confirm-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'confirm-modal-overlay';
+    overlay.className = 'confirm-modal-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-modal-box">
+        <p class="confirm-modal-message"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="confirm-modal-cancel-btn" class="confirm-modal-btn confirm-modal-btn--no">No, volver</button>
+          <button type="button" id="confirm-modal-ok-btn" class="confirm-modal-btn confirm-modal-btn--yes">Sí, confirmar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.querySelector('.confirm-modal-message').textContent = message;
+  overlay.style.display = 'flex';
+  document.getElementById('confirm-modal-ok-btn').onclick = () => {
+    overlay.style.display = 'none';
+    onConfirm();
+  };
+  document.getElementById('confirm-modal-cancel-btn').onclick = () => {
+    overlay.style.display = 'none';
+    if (onCancel) onCancel();
+  };
+}
+
 function renderAvanceComisionesSummary(summaryResult, detailGrid) {
   elements.avanceComisionesWrapper.innerHTML = '';
   elements.avanceComisionesTitle.textContent =
@@ -1824,21 +2097,33 @@ function renderAvanceComisionesSummary(summaryResult, detailGrid) {
 
     const filterDefs = buildAvanceDetailFilterDefs(detailGrid);
     const activeFilters = new Map();
+    const editableColMap = buildEditableColMap(detailGrid[0]);
+    let isEditMode = false;
+    const pendingChanges = new Map();
+    const validationMap = new Map(); // colLetter → string[]
 
     const scrollContainer = document.createElement('div');
     scrollContainer.className = 'avance-detail-scroll';
 
     const renderFiltered = () => {
       scrollContainer.innerHTML = '';
-      appendTableToElement(applyAvanceDetailFilters(detailGrid, activeFilters), scrollContainer);
-      applyAvanceDetailStatusChips(scrollContainer);
-      capAvanceDetailWideColumns(scrollContainer);
+      const filtered = applyAvanceDetailFilters(detailGrid, activeFilters);
+      if (isEditMode && editableColMap.size > 0) {
+        renderAvanceEditableTable(filtered, scrollContainer, editableColMap, pendingChanges, validationMap, {
+          controlVariant: 'default',
+          editableCellClassName: 'avance-editable-cell'
+        });
+      } else {
+        appendTableToElement(filtered, scrollContainer);
+        applyAvanceDetailStatusChips(scrollContainer);
+        capAvanceDetailWideColumns(scrollContainer);
+      }
     };
 
-    if (filterDefs.length) {
-      const filtersWrap = document.createElement('div');
-      filtersWrap.className = 'avance-detail-filters';
+    const filtersWrap = document.createElement('div');
+    filtersWrap.className = 'avance-detail-filters';
 
+    if (filterDefs.length) {
       const selectMap = new Map();
 
       const updateFilterOptions = () => {
@@ -1900,7 +2185,117 @@ function renderAvanceComisionesSummary(summaryResult, detailGrid) {
         group.appendChild(sel);
         filtersWrap.appendChild(group);
       });
+    }
 
+    // Edit button — only for canEdit users
+    if (currentUser?.canEdit && editableColMap.size > 0) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'avance-edit-btn';
+      editBtn.textContent = 'Editar';
+
+      const editActionsBar = document.createElement('div');
+      editActionsBar.className = 'avance-edit-bar hidden';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'avance-edit-bar-btn avance-edit-bar-btn--cancel';
+      cancelBtn.textContent = 'Cancelar';
+
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'avance-edit-bar-btn avance-edit-bar-btn--save';
+      saveBtn.textContent = 'Guardar';
+
+      editActionsBar.appendChild(cancelBtn);
+      editActionsBar.appendChild(saveBtn);
+
+      editBtn.addEventListener('click', async () => {
+        editBtn.disabled = true;
+        editBtn.textContent = 'Cargando...';
+        try {
+          validationMap.clear();
+          const cols = [...editableColMap.values()].join(',');
+          const res = await authFetch(
+            `${API_BASE_URL}/api/sheetvalidation?spreadsheetId=${avanceComisionesConfig.id}&sheetName=${encodeURIComponent(avanceComisionesConfig.sheetName)}&columns=${cols}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            Object.entries(data).forEach(([col, opts]) => {
+              validationMap.set(col, Array.isArray(opts) ? opts : []);
+            });
+          }
+        } catch (_) { /* continúa sin validación */ }
+        editBtn.disabled = false;
+        editBtn.textContent = 'Editar';
+        isEditMode = true;
+        pendingChanges.clear();
+        editBtn.classList.add('hidden');
+        editActionsBar.classList.remove('hidden');
+        renderFiltered();
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        showConfirmModal(
+          '¿Estás seguro? Se perderán todos los cambios sin guardar.',
+          () => {
+            isEditMode = false;
+            pendingChanges.clear();
+            editActionsBar.classList.add('hidden');
+            editBtn.classList.remove('hidden');
+            renderFiltered();
+          }
+        );
+      });
+
+      saveBtn.addEventListener('click', () => {
+        const updates = [...pendingChanges.entries()].map(([key, value]) => {
+          const [rowIndex, colLetter] = key.split(':');
+          return { range: `${colLetter}${rowIndex}`, value };
+        });
+
+        if (!updates.length) {
+          showConfirmModal('No hay cambios para guardar.', () => {});
+          return;
+        }
+
+        showConfirmModal(
+          `¿Confirmas guardar ${updates.length} cambio(s) en Google Sheets?`,
+          async () => {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Guardando...';
+            try {
+              const res = await authFetch(`${API_BASE_URL}/api/updatesheetcells`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  spreadsheetId: avanceComisionesConfig.id,
+                  sheetName: avanceComisionesConfig.sheetName,
+                  updates
+                })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error || 'Error al guardar.');
+              isEditMode = false;
+              pendingChanges.clear();
+              editActionsBar.classList.add('hidden');
+              editBtn.classList.remove('hidden');
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Guardar';
+              await loadAvanceComisionesData();
+            } catch (err) {
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Guardar';
+              showConfirmModal(`Error al guardar: ${err.message}`, () => {});
+            }
+          }
+        );
+      });
+
+      filtersWrap.appendChild(editBtn);
+      detailContent.appendChild(filtersWrap);
+      detailContent.appendChild(editActionsBar);
+    } else {
       detailContent.appendChild(filtersWrap);
     }
 
@@ -2122,6 +2517,240 @@ function renderDetalleIndicadoresTable() {
   elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
   elements.detalleIndicadoresStatus.textContent = `${totalRows} filas visibles${currentDetalleIndicadoresProduct !== 'Todo' ? ` | Producto: ${currentDetalleIndicadoresProduct}` : ''}${currentDetalleIndicadoresEsquema !== 'Todo' ? ` | Esquema: ${currentDetalleIndicadoresEsquema}` : ''}${normalizedSearch ? ` | Búsqueda: ${currentDetalleIndicadoresSearch}` : ''} | Página ${currentDetalleIndicadoresPage} de ${totalPages}.`;
   elements.detalleIndicadoresStatus.style.color = '#334155';
+}
+
+function renderSeguimientoTable(grid) {
+  elements.seguimientoTableWrapper.innerHTML = '';
+
+  if (!grid.length) {
+    elements.seguimientoStatus.textContent = 'No hay datos para mostrar.';
+    elements.seguimientoStatus.style.color = '#334155';
+    currentSeguimientoPage = 1;
+    return;
+  }
+
+  const headerRowCount = getSeguimientoHeaderRowCount(grid);
+  const headerRows = grid.slice(0, headerRowCount);
+  const dataRows = [...grid.slice(headerRowCount), ...currentSeguimientoDraftRows];
+  const totalRows = dataRows.length;
+  const totalPages = Math.max(Math.ceil(totalRows / SEGUIMIENTO_PAGE_SIZE), 1);
+
+  if (currentSeguimientoPage > totalPages) currentSeguimientoPage = totalPages;
+  if (currentSeguimientoPage < 1) currentSeguimientoPage = 1;
+
+  const startIndex = (currentSeguimientoPage - 1) * SEGUIMIENTO_PAGE_SIZE;
+  const paginatedGrid = [...headerRows, ...dataRows.slice(startIndex, startIndex + SEGUIMIENTO_PAGE_SIZE)];
+  const editableColMap = buildEditableColMapFromHeaderRow(headerRows.at(-1));
+  const canEditSeguimiento = currentUser?.canEdit && editableColMap.size > 0;
+
+  if (canEditSeguimiento) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'seguimiento-edit-toolbar';
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'avance-edit-btn';
+    editBtn.textContent = 'Editar';
+    editBtn.classList.toggle('hidden', currentSeguimientoIsEditMode);
+
+    const editActionsBar = document.createElement('div');
+    editActionsBar.className = `avance-edit-bar${currentSeguimientoIsEditMode ? '' : ' hidden'}`;
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'avance-edit-bar-btn avance-edit-bar-btn--cancel';
+    cancelBtn.textContent = 'Cancelar';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'avance-edit-bar-btn avance-edit-bar-btn--save';
+    saveBtn.textContent = 'Guardar';
+
+    editBtn.addEventListener('click', async () => {
+      editBtn.disabled = true;
+      editBtn.textContent = 'Cargando...';
+      try {
+        currentSeguimientoValidationMap.clear();
+        const cols = [...editableColMap.values()].join(',');
+        const res = await authFetch(
+          `${API_BASE_URL}/api/sheetvalidation?spreadsheetId=${seguimientoSheetConfig.id}&sheetName=${encodeURIComponent(currentSeguimientoSheet)}&columns=${cols}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          Object.entries(data).forEach(([col, opts]) => {
+            currentSeguimientoValidationMap.set(col, Array.isArray(opts) ? opts : []);
+          });
+        }
+      } catch (_) { /* continúa sin validación */ }
+      editBtn.disabled = false;
+      editBtn.textContent = 'Editar';
+      currentSeguimientoIsEditMode = true;
+      currentSeguimientoPendingChanges.clear();
+      currentSeguimientoDraftRows = [];
+      renderSeguimientoTable(currentSeguimientoGrid);
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      showConfirmModal(
+        '¿Estás seguro? Se perderán todos los cambios sin guardar.',
+        () => {
+          currentSeguimientoIsEditMode = false;
+          currentSeguimientoPendingChanges.clear();
+          currentSeguimientoDraftRows = [];
+          renderSeguimientoTable(currentSeguimientoGrid);
+        }
+      );
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      const updates = [...currentSeguimientoPendingChanges.entries()]
+        .filter(([key]) => !key.startsWith('draft:'))
+        .map(([key, value]) => {
+          const [rowIndex, colLetter] = key.split(':');
+          return { range: `${colLetter}${rowIndex}`, value };
+        });
+
+      const draftRows = currentSeguimientoDraftRows.map(row => ({
+        draftRowId: row._draftRowId,
+        rowValues: [...editableColMap.values()].map(colLetter => ({
+          colLetter,
+          value: currentSeguimientoPendingChanges.get(`draft:${row._draftRowId}:${colLetter}`) || ''
+        }))
+      }));
+
+      if (!updates.length && !draftRows.length) {
+        showConfirmModal('No hay cambios para guardar.', () => {});
+        return;
+      }
+
+      showConfirmModal(
+        `¿Confirmas guardar los cambios en Google Sheets?`,
+        async () => {
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Guardando...';
+          try {
+            if (updates.length) {
+              const res = await authFetch(`${API_BASE_URL}/api/updatesheetcells`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  spreadsheetId: seguimientoSheetConfig.id,
+                  sheetName: currentSeguimientoSheet,
+                  updates,
+                  editableColumns: [...editableColMap.values()]
+                })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error || 'Error al guardar.');
+            }
+
+            for (const draftRow of draftRows) {
+              const res = await authFetch(`${API_BASE_URL}/api/appendsheetrow`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  spreadsheetId: seguimientoSheetConfig.id,
+                  sheetName: currentSeguimientoSheet,
+                  rowValues: draftRow.rowValues,
+                  editableColumns: [...editableColMap.values()]
+                })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error || 'Error al agregar la fila.');
+            }
+
+            currentSeguimientoIsEditMode = false;
+            currentSeguimientoPendingChanges.clear();
+            currentSeguimientoDraftRows = [];
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Guardar';
+            await fetchSeguimientoSheetData();
+          } catch (err) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Guardar';
+            showConfirmModal(`Error al guardar: ${err.message}`, () => {});
+          }
+        }
+      );
+    });
+
+    editActionsBar.appendChild(cancelBtn);
+    editActionsBar.appendChild(saveBtn);
+    toolbar.appendChild(editBtn);
+    toolbar.appendChild(editActionsBar);
+    elements.seguimientoTableWrapper.appendChild(toolbar);
+  }
+
+  const tableContent = document.createElement('div');
+
+  if (currentSeguimientoIsEditMode && editableColMap.size > 0) {
+    const isLastPage = currentSeguimientoPage === totalPages;
+    renderAvanceEditableTable(
+      paginatedGrid,
+      tableContent,
+      editableColMap,
+      currentSeguimientoPendingChanges,
+      currentSeguimientoValidationMap,
+      {
+        headerRowCount,
+        controlVariant: 'sheet',
+        editableCellClassName: '',
+        footerAction: isLastPage ? {
+          label: 'Agregar fila',
+          onClick: () => {
+            const draftRowId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+            const templateRow = currentSeguimientoDraftRows.at(-1) || grid.at(-1);
+            currentSeguimientoDraftRows = [
+              ...currentSeguimientoDraftRows,
+              cloneSeguimientoDraftRow(templateRow, draftRowId)
+            ];
+            renderSeguimientoTable(currentSeguimientoGrid);
+          }
+        } : null
+      }
+    );
+  } else {
+    renderTableToElement(paginatedGrid, tableContent);
+  }
+
+  elements.seguimientoTableWrapper.appendChild(tableContent);
+
+  if (totalPages > 1) {
+    const pagination = document.createElement('div');
+    pagination.className = 'pagination-bar';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'pagination-btn';
+    prevBtn.textContent = 'Anterior';
+    prevBtn.disabled = currentSeguimientoPage === 1;
+    prevBtn.addEventListener('click', () => {
+      currentSeguimientoPage -= 1;
+      renderSeguimientoTable(grid);
+    });
+
+    const info = document.createElement('span');
+    info.className = 'pagination-info';
+    info.textContent = `Mostrando ${startIndex + 1}-${Math.min(startIndex + SEGUIMIENTO_PAGE_SIZE, totalRows)} de ${totalRows}`;
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'pagination-btn';
+    nextBtn.textContent = 'Siguiente';
+    nextBtn.disabled = currentSeguimientoPage === totalPages;
+    nextBtn.addEventListener('click', () => {
+      currentSeguimientoPage += 1;
+      renderSeguimientoTable(grid);
+    });
+
+    pagination.appendChild(prevBtn);
+    pagination.appendChild(info);
+    pagination.appendChild(nextBtn);
+    elements.seguimientoTableWrapper.appendChild(pagination);
+  }
+
+  elements.seguimientoStatus.textContent = `Datos cargados: ${totalRows} filas (sin cabecera). | Página ${currentSeguimientoPage} de ${totalPages}.`;
+  elements.seguimientoStatus.style.color = '#334155';
 }
 
 function getHeaderMapForRow(row) {
@@ -2790,6 +3419,11 @@ async function loadSeguimientoSheets() {
 
   try {
     elements.seguimientoStatus.textContent = "Cargando...";
+    currentSeguimientoGrid = [];
+    currentSeguimientoIsEditMode = false;
+    currentSeguimientoPendingChanges.clear();
+    currentSeguimientoValidationMap.clear();
+    currentSeguimientoDraftRows = [];
     const sheetNames = await fetchSheetNames(seguimientoSheetConfig.id);
     
     elements.seguimientoSheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
@@ -2810,6 +3444,11 @@ async function loadSeguimientoSheets() {
 function selectSeguimientoSheet(sheetName) {
   if (!sheetName) return;
   currentSeguimientoSheet = sheetName;
+  currentSeguimientoPage = 1;
+  currentSeguimientoIsEditMode = false;
+  currentSeguimientoPendingChanges.clear();
+  currentSeguimientoValidationMap.clear();
+  currentSeguimientoDraftRows = [];
   elements.seguimientoSheetTitle.textContent = `Seguimiento de Comisiones — ${currentSeguimientoSheet}`;
   fetchSeguimientoSheetData();
 }
@@ -2828,15 +3467,18 @@ async function fetchSeguimientoSheetData() {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
-    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
+    const rawGrid = buildGridFromSheet(data, tableRange);
+    const headerRowCount = getSeguimientoHeaderRowCount(rawGrid);
+    const grid = filterEmptyColumns(prepareGridForEditing(rawGrid, headerRowCount));
 
     if (grid.length) {
-      elements.seguimientoTableWrapper.innerHTML = '';
-      renderTableToElement(grid, elements.seguimientoTableWrapper);
-      elements.seguimientoStatus.textContent = `Datos cargados: ${Math.max(grid.length - 1, 0)} filas (sin cabecera).`;
-      elements.seguimientoStatus.style.color = '#334155';
+      currentSeguimientoGrid = grid;
+      renderSeguimientoTable(grid);
       return;
     }
+
+    currentSeguimientoGrid = [];
+    renderSeguimientoTable([]);
   } catch (err) {
     console.error('Error fetchSeguimientoSheetData:', err.message);
     elements.seguimientoStatus.textContent = `Error al leer datos: ${err.message}`;

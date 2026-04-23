@@ -7,7 +7,7 @@ const { URL } = require('url');
 const STATIC_DIR = path.join(__dirname, '..', 'front');
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
 const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem';
@@ -116,6 +116,11 @@ const ROLE_DEFINITIONS = {
     allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j'],
     allowedSpreadsheetIds: ['*']
   },
+  administrador_editor: {
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j'],
+    allowedSpreadsheetIds: ['*'],
+    canEdit: true
+  },
   usuario_gerencia: {
     allowedSections: ['doc-b', 'doc-d', 'doc-e', 'doc-f', 'doc-j'],
     allowedSpreadsheetIds: [SEGUIMIENTO_SPREADSHEET_ID, GESTION_COMISIONES_SPREADSHEET_ID]
@@ -164,6 +169,16 @@ function buildUserConfig() {
       password: adminPassword,
       role: 'administrador',
       ...ROLE_DEFINITIONS.administrador
+    };
+  }
+
+  const editorUsername = process.env.EDITOR_USERNAME;
+  const editorPassword = process.env.EDITOR_PASSWORD;
+  if (editorUsername && editorPassword) {
+    config[editorUsername] = {
+      password: editorPassword,
+      role: 'administrador_editor',
+      ...ROLE_DEFINITIONS.administrador_editor
     };
   }
 
@@ -237,7 +252,7 @@ function parseGoogleRoleEmails() {
 
   return Object.keys(ROLE_DEFINITIONS).reduce((acc, role) => {
     const configuredEmails = normalizeEmailList(parsed[role]);
-    acc[role] = configuredEmails.length ? configuredEmails : fallbackRoleEmails[role];
+    acc[role] = configuredEmails.length ? configuredEmails : (fallbackRoleEmails[role] || []);
     return acc;
   }, {});
 }
@@ -356,6 +371,323 @@ async function googleSheetsRequest(endpoint, params = {}) {
   }
 
   return data;
+}
+
+async function googleSheetsBatchUpdate(spreadsheetId, body) {
+  const accessToken = await getGoogleAccessToken();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    const cause = error.cause?.message ? ` Detalle: ${error.cause.message}` : '';
+    throw new Error(`No se pudo conectar con Google Sheets.${cause}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Error al escribir en Google Sheets.');
+  }
+
+  return data;
+}
+
+async function googleSheetsSpreadsheetBatchUpdate(spreadsheetId, body) {
+  const accessToken = await getGoogleAccessToken();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    const cause = error.cause?.message ? ` Detalle: ${error.cause.message}` : '';
+    throw new Error(`No se pudo conectar con Google Sheets.${cause}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || 'Error al actualizar la estructura de Google Sheets.');
+  }
+
+  return data;
+}
+
+const AVANCE_EDITABLE_COLS = new Set(['B', 'O', 'P']);
+
+function flattenSheetValidationData(response) {
+  return (response.sheets || []).flatMap(sheet => sheet.data || []);
+}
+
+async function resolveValidationOptions(spreadsheetId, validation) {
+  const conditionType = validation?.condition?.type;
+  const conditionValues = validation?.condition?.values || [];
+
+  if (conditionType === 'ONE_OF_LIST') {
+    return conditionValues
+      .map(value => String(value.userEnteredValue || '').trim())
+      .filter(Boolean);
+  }
+
+  if (conditionType !== 'ONE_OF_RANGE') return [];
+
+  const rangeExpression = String(conditionValues[0]?.userEnteredValue || '').trim().replace(/^=/, '');
+  if (!rangeExpression) return [];
+
+  const rangeResponse = await googleSheetsRequest(
+    `spreadsheets/${spreadsheetId}/values/${encodeURIComponent(rangeExpression)}`
+  );
+
+  return (rangeResponse.values || [])
+    .flat()
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+}
+
+async function handleSheetValidation(req, res, url) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  const spreadsheetId = url.searchParams.get('spreadsheetId');
+  const sheetName = url.searchParams.get('sheetName');
+  const columns = (url.searchParams.get('columns') || '')
+    .split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
+
+  if (!spreadsheetId || !sheetName || !columns.length) {
+    sendJson(req, res, 400, { error: 'Faltan parámetros.' });
+    return;
+  }
+
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+
+  if (!canAccessSheetName(spreadsheetId, sheetName)) {
+    sendJson(req, res, 403, { error: 'Sin permisos para esta pestana.' });
+    return;
+  }
+
+  const ranges = columns.map(col => `'${sheetName}'!${col}2:${col}200`);
+
+  const response = await googleSheetsRequest(`spreadsheets/${spreadsheetId}`, {
+    ranges,
+    includeGridData: 'true',
+    fields: 'sheets(data(rowData(values(dataValidation))))'
+  });
+
+  const result = {};
+  const validationBlocks = flattenSheetValidationData(response);
+
+  for (let i = 0; i < columns.length; i += 1) {
+    const col = columns[i];
+    const validation = (validationBlocks[i]?.rowData || [])
+      .map(row => row?.values?.[0]?.dataValidation)
+      .find(Boolean);
+    result[col] = await resolveValidationOptions(spreadsheetId, validation);
+  }
+
+  sendJson(req, res, 200, result);
+}
+
+async function handleUpdateSheetCells(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.canEdit) {
+    sendJson(req, res, 403, { error: 'No tienes permisos de edición.' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await parseJsonBody(req);
+  } catch {
+    sendJson(req, res, 400, { error: 'Cuerpo de petición inválido.' });
+    return;
+  }
+
+  const { spreadsheetId, sheetName, updates } = body;
+
+  if (!spreadsheetId || !sheetName || !Array.isArray(updates) || !updates.length) {
+    sendJson(req, res, 400, { error: 'Faltan campos requeridos: spreadsheetId, sheetName, updates.' });
+    return;
+  }
+
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta hoja.' });
+    return;
+  }
+
+  if (!canAccessSheetName(spreadsheetId, sheetName)) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta pestana.' });
+    return;
+  }
+
+  const editableColumns = Array.isArray(body.editableColumns) && body.editableColumns.length
+    ? new Set(body.editableColumns.map(col => String(col || '').trim().toUpperCase()).filter(Boolean))
+    : AVANCE_EDITABLE_COLS;
+
+  for (const update of updates) {
+    const colLetter = String(update.range || '').match(/^([A-Z]+)/)?.[1];
+    if (!colLetter || !editableColumns.has(colLetter)) {
+      sendJson(req, res, 403, { error: `Columna no editable: ${colLetter || update.range}` });
+      return;
+    }
+  }
+
+  const batchData = updates.map(u => ({
+    range: `'${sheetName}'!${u.range}`,
+    values: [[String(u.value ?? '')]]
+  }));
+
+  await googleSheetsBatchUpdate(spreadsheetId, {
+    valueInputOption: 'USER_ENTERED',
+    data: batchData
+  });
+
+  sendJson(req, res, 200, { ok: true, updated: updates.length });
+}
+
+async function handleAppendSheetRow(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.canEdit) {
+    sendJson(req, res, 403, { error: 'No tienes permisos de edición.' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await parseJsonBody(req);
+  } catch {
+    sendJson(req, res, 400, { error: 'Cuerpo de petición inválido.' });
+    return;
+  }
+
+  const { spreadsheetId, sheetName, rowValues, editableColumns } = body;
+
+  if (!spreadsheetId || !sheetName || !Array.isArray(rowValues) || !rowValues.length) {
+    sendJson(req, res, 400, { error: 'Faltan campos requeridos: spreadsheetId, sheetName, rowValues.' });
+    return;
+  }
+
+  if (!await canAccessSpreadsheet(auth.user, spreadsheetId)) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta hoja.' });
+    return;
+  }
+
+  if (!canAccessSheetName(spreadsheetId, sheetName)) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta pestana.' });
+    return;
+  }
+
+  const allowedColumns = new Set(
+    (Array.isArray(editableColumns) && editableColumns.length
+      ? editableColumns
+      : rowValues.map(entry => entry?.colLetter)
+    )
+      .map(col => String(col || '').trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+  const normalizedRowValues = rowValues.map(entry => ({
+    colLetter: String(entry?.colLetter || '').trim().toUpperCase(),
+    value: String(entry?.value ?? '')
+  }));
+
+  for (const entry of normalizedRowValues) {
+    if (!entry.colLetter || !allowedColumns.has(entry.colLetter)) {
+      sendJson(req, res, 403, { error: `Columna no editable: ${entry.colLetter || '(vacía)'}` });
+      return;
+    }
+  }
+
+  const [sheetMetadata, currentValues] = await Promise.all([
+    googleSheetsRequest(`spreadsheets/${spreadsheetId}`, {
+      fields: 'sheets(properties(sheetId,title))'
+    }),
+    googleSheetsRequest(
+      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${sheetName}'!A:ZZ`)}`
+    )
+  ]);
+
+  const targetSheet = (sheetMetadata.sheets || []).find(
+    sheet => sheet.properties?.title === sheetName
+  );
+
+  if (targetSheet?.properties?.sheetId == null) {
+    sendJson(req, res, 404, { error: 'Hoja no encontrada.' });
+    return;
+  }
+
+  const lastFilledRow = Math.max((currentValues.values || []).length, 1);
+  const targetRow = Math.max(lastFilledRow + 1, 2);
+  const templateRow = Math.max(targetRow - 1, 2);
+
+  if (targetRow !== templateRow) {
+    await googleSheetsSpreadsheetBatchUpdate(spreadsheetId, {
+      requests: [
+        {
+          copyPaste: {
+            source: {
+              sheetId: targetSheet.properties.sheetId,
+              startRowIndex: templateRow - 1,
+              endRowIndex: templateRow
+            },
+            destination: {
+              sheetId: targetSheet.properties.sheetId,
+              startRowIndex: targetRow - 1,
+              endRowIndex: targetRow
+            },
+            pasteType: 'PASTE_FORMAT',
+            pasteOrientation: 'NORMAL'
+          }
+        },
+        {
+          copyPaste: {
+            source: {
+              sheetId: targetSheet.properties.sheetId,
+              startRowIndex: templateRow - 1,
+              endRowIndex: templateRow
+            },
+            destination: {
+              sheetId: targetSheet.properties.sheetId,
+              startRowIndex: targetRow - 1,
+              endRowIndex: targetRow
+            },
+            pasteType: 'PASTE_DATA_VALIDATION',
+            pasteOrientation: 'NORMAL'
+          }
+        }
+      ]
+    });
+  }
+
+  await googleSheetsBatchUpdate(spreadsheetId, {
+    valueInputOption: 'USER_ENTERED',
+    data: normalizedRowValues.map(entry => ({
+      range: `'${sheetName}'!${entry.colLetter}${targetRow}`,
+      values: [[entry.value]]
+    }))
+  });
+
+  sendJson(req, res, 200, { ok: true, row: targetRow, updated: normalizedRowValues.length });
 }
 
 async function googleDriveRequest(endpoint, params = {}) {
@@ -482,7 +814,8 @@ function sanitizeUser(username) {
     username,
     role: user.role,
     allowedSections: user.allowedSections,
-    allowedSpreadsheetIds: user.allowedSpreadsheetIds
+    allowedSpreadsheetIds: user.allowedSpreadsheetIds,
+    canEdit: !!user.canEdit
   };
 }
 
@@ -989,6 +1322,21 @@ async function requestHandler(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/sheetdata') {
       await handleSheetData(req, res, url);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/sheetvalidation') {
+      await handleSheetValidation(req, res, url);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/updatesheetcells') {
+      await handleUpdateSheetCells(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/appendsheetrow') {
+      await handleAppendSheetRow(req, res);
       return;
     }
 
