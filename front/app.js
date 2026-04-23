@@ -39,6 +39,11 @@ const organigramaConfig = {
   id: gestionComisionesConfig.id,
   sheetName: 'ORGANIGRAMA_COMISIONAL'
 };
+const organigramaBaConfig = {
+  nombre: 'Organigrama BA',
+  id: gestionComisionesConfig.id,
+  sheetName: 'ORGANIGRAMA_BA'
+};
 const sectionDictionary = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -49,7 +54,8 @@ const sectionDictionary = {
   'doc-g': 'gestion-comisiones',
   'doc-h': 'detalle-indicadores',
   'doc-i': 'links-interes',
-  'doc-j': 'organigrama'
+  'doc-j': 'organigrama',
+  'doc-k': 'organigrama-ba'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -124,6 +130,10 @@ const elements = {
   organigramaStatus: document.getElementById("organigramaStatus"),
   organigramaWrapper: document.getElementById("organigramaWrapper"),
   organigramaRefreshBtn: document.getElementById("organigramaRefreshBtn"),
+  organigramaBaTitle: document.getElementById("organigramaBaTitle"),
+  organigramaBaStatus: document.getElementById("organigramaBaStatus"),
+  organigramaBaWrapper: document.getElementById("organigramaBaWrapper"),
+  organigramaBaRefreshBtn: document.getElementById("organigramaBaRefreshBtn"),
 };
 
 let currentProduct = null;
@@ -323,6 +333,13 @@ function resetOrganigramaState() {
   elements.organigramaWrapper.innerHTML = '';
 }
 
+function resetOrganigramaBaState() {
+  elements.organigramaBaTitle.textContent = organigramaBaConfig.nombre;
+  elements.organigramaBaStatus.textContent = 'Abre esta sección para cargar la información.';
+  elements.organigramaBaStatus.style.color = '#334155';
+  elements.organigramaBaWrapper.innerHTML = '';
+}
+
 function resetDetalleIndicadoresState() {
   currentDetalleIndicadoresGrid = [];
   currentDetalleIndicadoresHeaderInfo = null;
@@ -418,6 +435,11 @@ function applyPermissions() {
     resetVisualizadoState();
   }
 
+  if (!hasAccessToSection('organigrama-ba')) {
+    document.getElementById('organigrama-ba-section').classList.remove('active');
+    resetOrganigramaBaState();
+  }
+
   const firstAllowedButton = Array.from(document.querySelectorAll('.nav-item'))
     .find(button => !button.classList.contains('hidden'));
   const firstAllowedSection = firstAllowedButton?.getAttribute('data-section');
@@ -466,6 +488,7 @@ function clearSessionUi() {
   resetLinksInteresState();
   resetAvanceComisionesState();
   resetOrganigramaState();
+  resetOrganigramaBaState();
   resetPoliticasState();
   resetRentabilidadState();
   elements.loginForm.reset();
@@ -3740,8 +3763,8 @@ function alignVerticalSpines(wrapper) {
   });
 }
 
-function renderOrgChart(root) {
-  const existing = elements.organigramaWrapper.querySelector('.org-chart-wrap');
+function renderOrgChart(root, wrapper) {
+  const existing = wrapper.querySelector('.org-chart-wrap');
   if (existing) existing.remove();
   if (!root || !root.children.length) return;
   const wrap = document.createElement('div');
@@ -3752,14 +3775,14 @@ function renderOrgChart(root) {
   ul.appendChild(renderOrgNode(root));
   chart.appendChild(ul);
   wrap.appendChild(chart);
-  elements.organigramaWrapper.appendChild(wrap);
-  requestAnimationFrame(() => alignVerticalSpines(elements.organigramaWrapper));
+  wrapper.appendChild(wrap);
+  requestAnimationFrame(() => alignVerticalSpines(wrapper));
 }
 
-function renderOrganigrama(allRows) {
-  elements.organigramaWrapper.innerHTML = '';
+function renderOrganigrama(allRows, wrapper, statusEl) {
+  wrapper.innerHTML = '';
   if (!allRows.length) {
-    elements.organigramaStatus.textContent = 'No se encontraron datos en la hoja.';
+    statusEl.textContent = 'No se encontraron datos en la hoja.';
     return;
   }
 
@@ -3782,15 +3805,15 @@ function renderOrganigrama(allRows) {
     select.addEventListener('change', () => {
       const sel = select.value;
       const filtered = sel ? allRows.filter(r => r.producto === sel) : allRows;
-      renderOrgChart(buildOrgTreeFromFlat(filtered));
+      renderOrgChart(buildOrgTreeFromFlat(filtered), wrapper);
     });
     bar.appendChild(label);
     bar.appendChild(select);
-    elements.organigramaWrapper.appendChild(bar);
+    wrapper.appendChild(bar);
   }
 
-  renderOrgChart(buildOrgTreeFromFlat(allRows));
-  elements.organigramaStatus.textContent = '';
+  renderOrgChart(buildOrgTreeFromFlat(allRows), wrapper);
+  statusEl.textContent = '';
 }
 
 async function loadOrganigramaData() {
@@ -3807,12 +3830,35 @@ async function loadOrganigramaData() {
       elements.organigramaStatus.textContent = 'No se encontraron datos. Verificá que la hoja "ORGANIGRAMA_COMISIONAL" tenga las columnas: Producto | PO | Dominio | Subdominio | Perfil | Canal | Area';
       return;
     }
-    renderOrganigrama(rows);
+    renderOrganigrama(rows, elements.organigramaWrapper, elements.organigramaStatus);
   } catch (err) {
     console.error('Error loadOrganigramaData:', err.message);
     elements.organigramaStatus.textContent = `Error al leer datos: ${err.message}`;
     elements.organigramaStatus.style.color = '#b91c1c';
     elements.organigramaWrapper.innerHTML = '';
+  }
+}
+
+async function loadOrganigramaBaData() {
+  if (!hasAccessToSection('organigrama-ba')) return;
+  elements.organigramaBaTitle.textContent = organigramaBaConfig.nombre;
+  elements.organigramaBaStatus.textContent = 'Cargando...';
+  elements.organigramaBaStatus.style.color = '#334155';
+  elements.organigramaBaWrapper.innerHTML = '';
+  try {
+    const data = await fetchSingleSheetData(organigramaBaConfig.id, organigramaBaConfig.sheetName);
+    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
+    const rows = parseOrgFlat(grid);
+    if (!rows.length) {
+      elements.organigramaBaStatus.textContent = 'No se encontraron datos. Verificá que la hoja "ORGANIGRAMA_BA" tenga las columnas: Producto | PO | Dominio | Subdominio | Perfil | Canal | Area';
+      return;
+    }
+    renderOrganigrama(rows, elements.organigramaBaWrapper, elements.organigramaBaStatus);
+  } catch (err) {
+    console.error('Error loadOrganigramaBaData:', err.message);
+    elements.organigramaBaStatus.textContent = `Error al leer datos: ${err.message}`;
+    elements.organigramaBaStatus.style.color = '#b91c1c';
+    elements.organigramaBaWrapper.innerHTML = '';
   }
 }
 
@@ -3897,6 +3943,11 @@ function changeSection(sectionId) {
 
   if (sectionId === 'organigrama') {
     loadOrganigramaData();
+    return;
+  }
+
+  if (sectionId === 'organigrama-ba') {
+    loadOrganigramaBaData();
   }
 }
 
@@ -3952,6 +4003,7 @@ function init() {
   elements.linksInteresRefreshBtn.addEventListener("click", loadLinksInteresData);
   elements.avanceComisionesRefreshBtn.addEventListener("click", loadAvanceComisionesData);
   elements.organigramaRefreshBtn.addEventListener("click", loadOrganigramaData);
+  elements.organigramaBaRefreshBtn.addEventListener("click", loadOrganigramaBaData);
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 
   // Agregar navegación por secciones
