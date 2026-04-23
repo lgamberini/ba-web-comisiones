@@ -21,7 +21,7 @@ const gestionComisionesConfig = {
 };
 const avanceComisionesConfig = {
   nombre: 'Avance Comisiones',
-  id: '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM',
+  id: null,
   sheetName: 'CRONOGRAMA'
 };
 const detalleIndicadoresConfig = {
@@ -487,6 +487,7 @@ function clearSessionUi() {
   resetDetalleIndicadoresState();
   resetLinksInteresState();
   resetAvanceComisionesState();
+  avanceComisionesConfig.id = null;
   resetOrganigramaState();
   resetOrganigramaBaState();
   resetPoliticasState();
@@ -3614,6 +3615,16 @@ async function loadAvanceComisionesData() {
   elements.avanceComisionesWrapper.innerHTML = '';
 
   try {
+    if (!avanceComisionesConfig.id) {
+      const resp = await authFetch(`${API_BASE_URL}/api/avance-comisiones-id`);
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => null);
+        throw new Error(errBody?.error || `Error ${resp.status} al obtener el archivo de cronograma.`);
+      }
+      const { spreadsheetId } = await resp.json();
+      avanceComisionesConfig.id = spreadsheetId;
+    }
+
     const [meta, data] = await Promise.all([
       fetchSpreadsheetMeta(avanceComisionesConfig.id),
       fetchSingleSheetData(avanceComisionesConfig.id, avanceComisionesConfig.sheetName)

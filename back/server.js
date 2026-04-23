@@ -11,14 +11,12 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
 const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem';
+const AVANCE_COMISIONES_ROOT_FOLDER_ID = '15VSV2I1xDUxIQZ-JZmi-OCCfOkWIV0By';
 const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs';
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg';
-const AVANCE_COMISIONES_SPREADSHEET_ID =
-  process.env.AVANCE_COMISIONES_SPREADSHEET_ID || '1gMgyhJUnwU3V_dYIP0ekG-iJy77u2SlHYgQ177peFxM';
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
   [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes', 'organigrama_comisional', 'organigrama_ba'],
-  [AVANCE_COMISIONES_SPREADSHEET_ID]: ['cronograma']
 };
 const ENV_PATH = path.join(__dirname, '.env');
 const MIME_TYPES = {
@@ -38,6 +36,9 @@ let tokenCache = null;
 let esquemasComisionalesCache = null;
 let esquemasComisionalesCacheAt = 0;
 const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000;
+let avanceComisionesIdCache = null;
+let avanceComisionesIdCacheAt = 0;
+const AVANCE_COMISIONES_ID_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const activeSessions = new Map();
 
@@ -752,6 +753,50 @@ async function getCachedEsquemasComisionales() {
   return esquemasComisionalesCache;
 }
 
+async function getCachedAvanceComisionesSpreadsheetId() {
+  const now = Date.now();
+  if (avanceComisionesIdCache && now - avanceComisionesIdCacheAt < AVANCE_COMISIONES_ID_CACHE_TTL_MS) {
+    return avanceComisionesIdCache;
+  }
+
+  const currentYear = String(new Date().getFullYear());
+
+  // Buscar la subcarpeta del año actual
+  const foldersResponse = await googleDriveRequest('files', {
+    q: `'${AVANCE_COMISIONES_ROOT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id,name)',
+    pageSize: '50'
+  });
+  const yearFolder = (foldersResponse.files || []).find(f => f.name === currentYear);
+  if (!yearFolder) throw new Error(`No se encontró la carpeta del año ${currentYear} en Drive.`);
+
+  // Listar archivos dentro de la carpeta del año (sin filtrar mimeType: puede ser Sheets nativo o Excel subido)
+  const filesResponse = await googleDriveRequest('files', {
+    q: `'${yearFolder.id}' in parents and trashed=false`,
+    fields: 'files(id,name,mimeType)',
+    pageSize: '100'
+  });
+
+  // Formato esperado: MMYYYY_Cronograma_de_Comisiones
+  const cronogramaRegex = /^(\d{2})\d{4}_/i;
+  let best = null;
+  for (const file of (filesResponse.files || [])) {
+    const match = file.name.match(cronogramaRegex);
+    if (!match) continue;
+    const month = parseInt(match[1], 10);
+    if (!best || month > best.month) best = { month, id: file.id, name: file.name };
+  }
+
+  if (!best) {
+    const found = (filesResponse.files || []).map(f => f.name).join(', ') || '(ninguno)';
+    throw new Error(`No se encontró ningún archivo de cronograma en la carpeta ${currentYear}. Archivos encontrados: ${found}`);
+  }
+
+  avanceComisionesIdCache = best.id;
+  avanceComisionesIdCacheAt = now;
+  return avanceComisionesIdCache;
+}
+
 async function verifyGoogleIdToken(idToken) {
   if (!GOOGLE_LOGIN_CLIENT_ID) {
     throw new Error('El login con Google no esta configurado.');
@@ -1154,6 +1199,24 @@ async function handleEsquemasComisionales(req, res) {
   sendJson(req, res, 200, { files });
 }
 
+async function handleAvanceComisionesId(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.allowedSections.includes('doc-a')) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta sección.' });
+    return;
+  }
+
+  try {
+    const spreadsheetId = await getCachedAvanceComisionesSpreadsheetId();
+    sendJson(req, res, 200, { spreadsheetId });
+  } catch (err) {
+    console.error('Error handleAvanceComisionesId:', err.message);
+    sendJson(req, res, 500, { error: err.message });
+  }
+}
+
 async function handleSheetNames(req, res, url) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -1308,6 +1371,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/esquemas-comisionales') {
       await handleEsquemasComisionales(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/avance-comisiones-id') {
+      await handleAvanceComisionesId(req, res);
       return;
     }
 
