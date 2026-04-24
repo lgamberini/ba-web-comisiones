@@ -962,7 +962,7 @@ function setCorsHeaders(req, res) {
       "script-src 'self' https://accounts.google.com",
       "style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com",
       "frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com",
-      "connect-src 'self' https://oauth2.googleapis.com",
+      "connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com",
       "img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com",
       "font-src 'self' https://fonts.gstatic.com",
       "object-src 'none'",
