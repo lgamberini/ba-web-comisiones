@@ -50,9 +50,12 @@ const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000; // 15 minutos
 const ipRequestCounts = new Map();
 const loginAttempts = new Map();
 function getClientIp(req) {
-  // X-Forwarded-For puede ser spoofed, pero es útil si hay proxy
   const xfwd = req.headers['x-forwarded-for'];
-  return (xfwd ? xfwd.split(',')[0].trim() : req.socket.remoteAddress) || '';
+  if (xfwd) {
+    const ips = xfwd.split(',').map(s => s.trim());
+    return ips[ips.length - 1];
+  }
+  return req.socket.remoteAddress || '';
 }
 
 function rateLimitMiddleware(req, res) {
@@ -507,6 +510,8 @@ async function handleSheetValidation(req, res, url) {
 }
 
 async function handleUpdateSheetCells(req, res) {
+  if (!validateOrigin(req, res)) return;
+
   const auth = authenticateRequest(req, res);
   if (!auth) return;
 
@@ -566,6 +571,8 @@ async function handleUpdateSheetCells(req, res) {
 }
 
 async function handleAppendSheetRow(req, res) {
+  if (!validateOrigin(req, res)) return;
+
   const auth = authenticateRequest(req, res);
   if (!auth) return;
 
@@ -794,6 +801,7 @@ async function getCachedAvanceComisionesSpreadsheetId() {
 
   avanceComisionesIdCache = best.id;
   avanceComisionesIdCacheAt = now;
+  RESTRICTED_SHEETS_BY_SPREADSHEET[best.id] = ['cronograma'];
   return avanceComisionesIdCache;
 }
 
@@ -865,6 +873,12 @@ function sanitizeUser(username) {
   };
 }
 
+function toPublicUser(user) {
+  if (!user) return null;
+  const { allowedSpreadsheetIds: _, ...publicUser } = user;
+  return publicUser;
+}
+
 async function canAccessSpreadsheet(user, spreadsheetId) {
   if (user.allowedSpreadsheetIds.includes('*')) return true;
   if (user.allowedSpreadsheetIds.includes(spreadsheetId)) return true;
@@ -899,6 +913,19 @@ function getAllowedOrigins() {
     .filter(Boolean);
 }
 
+function validateOrigin(req, res) {
+  const allowedOrigins = getAllowedOrigins();
+  if (!allowedOrigins.length) return true;
+
+  const requestOrigin = req.headers.origin || req.headers.referer || '';
+  const matches = allowedOrigins.some(o => requestOrigin === o || requestOrigin.startsWith(o + '/'));
+  if (!matches) {
+    sendJson(req, res, 403, { error: 'Origen no permitido.' });
+    return false;
+  }
+  return true;
+}
+
 function resolveAllowedOrigin(req) {
   const requestOrigin = req.headers.origin || '';
   const allowedOrigins = getAllowedOrigins();
@@ -922,12 +949,27 @@ function setCorsHeaders(req, res) {
   const allowedOrigin = resolveAllowedOrigin(req);
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' https://accounts.google.com",
+      "style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com",
+      "frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com",
+      "connect-src 'self' https://oauth2.googleapis.com",
+      "img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'"
+    ].join('; ')
+  );
 
   // HSTS solo en producción y si es HTTPS
   if (IS_PRODUCTION) {
@@ -967,12 +1009,7 @@ function parseCookies(req) {
 
 function getAuthTokenFromRequest(req) {
   const cookies = parseCookies(req);
-  if (cookies.session_token) {
-    return cookies.session_token;
-  }
-
-  const authHeader = req.headers.authorization || '';
-  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  return cookies.session_token || '';
 }
 
 function buildSessionCookie(token, expiresAt) {
@@ -1136,8 +1173,7 @@ async function handleLogin(req, res) {
   const expiresAt = activeSessions.get(token).expiresAt;
   res.setHeader('Set-Cookie', buildSessionCookie(token, expiresAt));
   sendJson(req, res, 200, {
-    token,
-    user: sanitizeUser(username)
+    user: toPublicUser(sanitizeUser(username))
   });
 }
 
@@ -1162,15 +1198,14 @@ async function handleGoogleLogin(req, res) {
   const expiresAt = activeSessions.get(token).expiresAt;
   res.setHeader('Set-Cookie', buildSessionCookie(token, expiresAt));
   sendJson(req, res, 200, {
-    token,
-    user: sanitizeUser(googleUser.email)
+    user: toPublicUser(sanitizeUser(googleUser.email))
   });
 }
 
 function handleSession(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
-  sendJson(req, res, 200, { user: auth.user });
+  sendJson(req, res, 200, { user: toPublicUser(auth.user) });
 }
 
 function handleLogout(req, res) {
@@ -1213,7 +1248,8 @@ async function handleAvanceComisionesId(req, res) {
     sendJson(req, res, 200, { spreadsheetId });
   } catch (err) {
     console.error('Error handleAvanceComisionesId:', err.message);
-    sendJson(req, res, 500, { error: err.message });
+    const msg = IS_PRODUCTION ? 'Error interno del servidor.' : err.message;
+    sendJson(req, res, 500, { error: msg });
   }
 }
 
@@ -1416,10 +1452,9 @@ async function requestHandler(req, res) {
 
     sendText(req, res, 404, 'No encontrado');
   } catch (error) {
-    if (!IS_PRODUCTION) {
-      console.error('[ERROR]', error.message);
-    }
-    sendJson(req, res, 500, { error: error.message });
+    console.error('[ERROR]', error.message);
+    const msg = IS_PRODUCTION ? 'Error interno del servidor.' : error.message;
+    sendJson(req, res, 500, { error: msg });
   }
 }
 const server = http.createServer((req, res) => {

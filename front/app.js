@@ -228,16 +228,8 @@ function restoreSidebarState() {
 }
 
 async function authFetch(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  const authToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-
-  if (authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
-  }
-
   const res = await fetch(url, {
     ...options,
-    headers,
     credentials: 'include'
   });
 
@@ -461,11 +453,6 @@ function showAppForUser(user) {
   startInactivityTracking();
 }
 
-function storeAuthToken(token) {
-  if (!token) return;
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-}
-
 function clearStoredAuthToken() {
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 }
@@ -523,7 +510,6 @@ async function handleLogin(event) {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
-    storeAuthToken(data.token);
     showAppForUser(data.user);
   } catch (err) {
     console.error('Error login:', err.message);
@@ -553,7 +539,6 @@ async function handleGoogleCredentialResponse(response) {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
-    storeAuthToken(data.token);
     showAppForUser(data.user);
   } catch (err) {
     console.error('Error login google:', err.message);
@@ -3963,6 +3948,7 @@ function changeSection(sectionId) {
 }
 
 function init() {
+  clearStoredAuthToken();
   configureLoginView();
   restoreSidebarState();
   initGoogleLogin();
