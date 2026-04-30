@@ -592,6 +592,32 @@ async function runConfigApsAction(idx, action) {
     return;
   }
 
+  if (!appsScriptAccessToken || Date.now() >= appsScriptTokenExpiry) {
+    if (GOOGLE_CLIENT_ID && window.google?.accounts?.oauth2) {
+      try {
+        await new Promise((resolve, reject) => {
+          const client = google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/script.external_request',
+            callback: (resp) => {
+              if (resp.error || !resp.access_token) { reject(new Error(resp.error || 'Sin token')); return; }
+              appsScriptAccessToken = resp.access_token;
+              appsScriptTokenExpiry = Date.now() + ((resp.expires_in || 3600) - 60) * 1000;
+              resolve();
+            }
+          });
+          client.requestAccessToken();
+        });
+      } catch (_) {
+        alert('Se necesita autorización de Google para ejecutar esta acción. Acepta el permiso en la ventana que aparece e intenta de nuevo.');
+        return;
+      }
+    } else {
+      alert('Esta acción requiere iniciar sesión con Google.');
+      return;
+    }
+  }
+
   currentConfigApsRows[idx][action] = 'PROCESANDO';
   renderConfigApsCards();
 
