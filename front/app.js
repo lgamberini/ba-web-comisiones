@@ -44,6 +44,11 @@ const organigramaBaConfig = {
   id: gestionComisionesConfig.id,
   sheetName: 'ORGANIGRAMA_BA'
 };
+const configApsConfig = {
+  nombre: 'Gestión de Comisiones II',
+  id: gestionComisionesConfig.id,
+  sheetName: 'CONFIG_APS'
+};
 const sectionDictionary = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -55,7 +60,8 @@ const sectionDictionary = {
   'doc-h': 'detalle-indicadores',
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
-  'doc-k': 'organigrama-ba'
+  'doc-k': 'organigrama-ba',
+  'doc-l': 'config-aps'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -134,6 +140,12 @@ const elements = {
   organigramaBaStatus: document.getElementById("organigramaBaStatus"),
   organigramaBaWrapper: document.getElementById("organigramaBaWrapper"),
   organigramaBaRefreshBtn: document.getElementById("organigramaBaRefreshBtn"),
+  configApsTitle: document.getElementById("configApsTitle"),
+  configApsStatus: document.getElementById("configApsStatus"),
+  configApsWrapper: document.getElementById("configApsWrapper"),
+  configApsRefreshBtn: document.getElementById("configApsRefreshBtn"),
+  configApsProductoSelect: document.getElementById("configApsProductoSelect"),
+  configApsEsquemaSelect: document.getElementById("configApsEsquemaSelect"),
 };
 
 let currentProduct = null;
@@ -332,6 +344,330 @@ function resetOrganigramaBaState() {
   elements.organigramaBaWrapper.innerHTML = '';
 }
 
+let currentConfigApsRows = [];
+const configApsExpandedRows = new Set();
+let configApsFilterProducto = '';
+let configApsFilterEsquema = 'Todo';
+let appsScriptAccessToken = null;
+let appsScriptTokenExpiry = 0;
+
+function resetConfigApsState() {
+  currentConfigApsRows = [];
+  configApsExpandedRows.clear();
+  configApsFilterProducto = '';
+  configApsFilterEsquema = 'Todo';
+  elements.configApsProductoSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
+  elements.configApsEsquemaSelect.innerHTML = '<option value="Todo">Todo</option>';
+  elements.configApsTitle.textContent = configApsConfig.nombre;
+  elements.configApsStatus.textContent = 'Abre esta sección para cargar la información.';
+  elements.configApsStatus.style.color = '#334155';
+  elements.configApsWrapper.innerHTML = '';
+}
+
+function parseConfigApsRows(grid) {
+  const headerRowIndex = grid.findIndex(row =>
+    getCellText(row, 0).toLowerCase() === 'producto'
+  );
+  if (headerRowIndex === -1) return [];
+
+  const headerRow = grid[headerRowIndex];
+  const headers = Array.from({ length: 10 }, (_, i) =>
+    getCellText(headerRow, i).toLowerCase().trim()
+  );
+
+  const col = {
+    producto: headers.indexOf('producto'),
+    esquema: headers.indexOf('esquema'),
+    id: headers.indexOf('id'),
+    resumen: headers.indexOf('resumen'),
+    consolidado: headers.indexOf('consolidado'),
+    correo: headers.indexOf('correo'),
+    fechaPago: headers.indexOf('fecha de pago'),
+    periodicidad: headers.indexOf('periodicidad'),
+    asunto: headers.indexOf('asunto'),
+  };
+
+  const rows = [];
+  for (let i = headerRowIndex + 1; i < grid.length; i++) {
+    const row = grid[i];
+    const producto = col.producto >= 0 ? getCellText(row, col.producto) : '';
+    const esquema = col.esquema >= 0 ? getCellText(row, col.esquema) : '';
+    if (!producto && !esquema) continue;
+    rows.push({
+      sheetRow: i + 1,
+      producto,
+      esquema,
+      id: col.id >= 0 ? getCellText(row, col.id) : '',
+      resumen: col.resumen >= 0 ? getCellText(row, col.resumen) : '',
+      consolidado: col.consolidado >= 0 ? getCellText(row, col.consolidado) : '',
+      correo: col.correo >= 0 ? getCellText(row, col.correo) : '',
+      fechaPago: col.fechaPago >= 0 ? getCellText(row, col.fechaPago) : '',
+      periodicidad: col.periodicidad >= 0 ? getCellText(row, col.periodicidad) : '',
+      asunto: col.asunto >= 0 ? getCellText(row, col.asunto) : '',
+      colIdx: col,
+    });
+  }
+  return rows;
+}
+
+function configApsStatusClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'finalizado') return 'status-finalizado';
+  if (s === 'procesando') return 'status-procesando';
+  if (s === 'error') return 'status-error';
+  if (s === 'ejecutar') return 'status-ejecutar';
+  return 'status-empty';
+}
+
+function populateConfigApsFilters() {
+  const productos = [...new Set(currentConfigApsRows.map(r => r.producto).filter(Boolean))];
+  const sel = elements.configApsProductoSelect;
+  const prevProducto = sel.value;
+  sel.innerHTML = '<option value="">-- Seleccionar producto --</option>' +
+    productos.map(p => `<option value="${p}">${p}</option>`).join('');
+  sel.value = productos.includes(prevProducto) ? prevProducto : '';
+  configApsFilterProducto = sel.value;
+
+  updateConfigApsEsquemaOptions();
+}
+
+function updateConfigApsEsquemaOptions() {
+  const filtered = configApsFilterProducto
+    ? currentConfigApsRows.filter(r => r.producto === configApsFilterProducto)
+    : [];
+  const esquemas = ['Todo', ...new Set(filtered.map(r => r.esquema).filter(Boolean))];
+  const sel = elements.configApsEsquemaSelect;
+  const prev = sel.value;
+  sel.innerHTML = esquemas.map(e => `<option value="${e}">${e}</option>`).join('');
+  sel.value = esquemas.includes(prev) ? prev : 'Todo';
+  configApsFilterEsquema = sel.value;
+}
+
+function renderConfigApsCards() {
+  const wrapper = elements.configApsWrapper;
+  wrapper.innerHTML = '';
+
+  if (!currentConfigApsRows.length) {
+    elements.configApsStatus.textContent = 'No se encontraron filas en CONFIG_APS.';
+    return;
+  }
+
+  if (!configApsFilterProducto) {
+    elements.configApsStatus.textContent = 'Selecciona un producto para ver los esquemas.';
+    return;
+  }
+
+  elements.configApsStatus.textContent = '';
+
+  const visibleRows = currentConfigApsRows.filter((r) => {
+    if (r.producto !== configApsFilterProducto) return false;
+    if (configApsFilterEsquema !== 'Todo' && r.esquema !== configApsFilterEsquema) return false;
+    return true;
+  });
+
+  const list = document.createElement('div');
+  list.className = 'config-aps-list';
+
+  visibleRows.forEach((rowData) => {
+    const idx = currentConfigApsRows.indexOf(rowData);
+    const isExpanded = configApsExpandedRows.has(idx);
+    const card = document.createElement('div');
+    card.className = `config-aps-card${isExpanded ? ' expanded' : ''}`;
+
+    const statusText = (s) => s || '—';
+
+    card.innerHTML = `
+      <div class="config-aps-card-header">
+        <div>
+          <div class="config-aps-card-title">${rowData.producto}</div>
+          <div class="config-aps-card-subtitle">${rowData.esquema}</div>
+        </div>
+        <span class="config-aps-card-toggle">▼</span>
+      </div>
+      <div class="config-aps-card-body">
+        <div class="config-aps-id-row">
+          <input class="config-aps-id-input" type="text" placeholder="Pegar URL o ID del spreadsheet" value="${rowData.id}" data-idx="${idx}" />
+          <button class="config-aps-save-btn" data-idx="${idx}">Guardar ID</button>
+          <button class="config-aps-clear-id-btn" data-idx="${idx}" title="Borrar ID" ${!rowData.id ? 'disabled' : ''}>✕</button>
+        </div>
+        <div class="config-aps-actions">
+          ${['resumen', 'consolidado', 'correo'].map(action => `
+            <div class="config-aps-action-row">
+              <span class="config-aps-action-name">${action.charAt(0).toUpperCase() + action.slice(1)}</span>
+              <span class="config-aps-status ${configApsStatusClass(rowData[action])}">${statusText(rowData[action])}</span>
+              <button class="config-aps-action-btn" data-idx="${idx}" data-action="${action}"
+                ${rowData[action] === 'PROCESANDO' ? 'disabled' : ''}>
+                Ejecutar
+              </button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="config-aps-footer">
+          <span>${rowData.periodicidad ? `${rowData.periodicidad} · ${rowData.fechaPago}` : ''}</span>
+          <button class="config-aps-reset-btn" data-idx="${idx}">Resetear período</button>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.config-aps-card-header').addEventListener('click', () => {
+      if (configApsExpandedRows.has(idx)) {
+        configApsExpandedRows.delete(idx);
+        card.classList.remove('expanded');
+      } else {
+        configApsExpandedRows.add(idx);
+        card.classList.add('expanded');
+      }
+    });
+
+    card.querySelector('.config-aps-save-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await saveConfigApsId(idx);
+    });
+
+    card.querySelector('.config-aps-clear-id-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`¿Borrar el ID de "${rowData.producto} — ${rowData.esquema}"? Esta acción no se puede deshacer.`)) return;
+      const input = card.querySelector('.config-aps-id-input');
+      if (input) input.value = '';
+      await saveConfigApsId(idx);
+    });
+
+    card.querySelectorAll('.config-aps-action-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        await runConfigApsAction(idx, action);
+      });
+    });
+
+    card.querySelector('.config-aps-reset-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await resetConfigApsPeriod(idx);
+    });
+
+    list.appendChild(card);
+  });
+
+  wrapper.appendChild(list);
+}
+
+function extractSpreadsheetId(input) {
+  const trimmed = (input || '').trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : trimmed;
+}
+
+async function saveConfigApsId(idx) {
+  const rowData = currentConfigApsRows[idx];
+  const input = elements.configApsWrapper.querySelector(`.config-aps-id-input[data-idx="${idx}"]`);
+  const rawValue = input?.value?.trim() || '';
+  const newId = rawValue ? extractSpreadsheetId(rawValue) : '';
+
+  const colLetter = String.fromCharCode(65 + (rowData.colIdx.id >= 0 ? rowData.colIdx.id : 2));
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/updatesheetcells`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        spreadsheetId: configApsConfig.id,
+        sheetName: configApsConfig.sheetName,
+        editableColumns: [colLetter],
+        updates: [{ range: `${colLetter}${rowData.sheetRow}`, value: newId }]
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    currentConfigApsRows[idx].id = newId;
+    if (input) input.value = newId;
+  } catch (err) {
+    alert(`Error al guardar ID: ${err.message}`);
+    console.error('Error guardando ID:', err.message);
+  }
+}
+
+async function runConfigApsAction(idx, action) {
+  const rowData = currentConfigApsRows[idx];
+  if (!rowData.id) {
+    alert('Primero guardá el ID del spreadsheet.');
+    return;
+  }
+
+  currentConfigApsRows[idx][action] = 'PROCESANDO';
+  renderConfigApsCards();
+
+  try {
+    const scriptBody = { action, fila: rowData.sheetRow };
+    if (appsScriptAccessToken && Date.now() < appsScriptTokenExpiry) {
+      scriptBody.accessToken = appsScriptAccessToken;
+    }
+    const res = await authFetch(`${API_BASE_URL}/api/run-script`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(scriptBody)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const sheetData = await fetchSingleSheetData(configApsConfig.id, configApsConfig.sheetName);
+    const grid = buildGridFromSheet(sheetData, 'A1:J500');
+    currentConfigApsRows = parseConfigApsRows(grid);
+    renderConfigApsCards();
+  } catch (err) {
+    currentConfigApsRows[idx][action] = 'ERROR';
+    renderConfigApsCards();
+    console.error(`Error ejecutando ${action}:`, err.message);
+  }
+}
+
+async function resetConfigApsPeriod(idx) {
+  const rowData = currentConfigApsRows[idx];
+  if (!confirm(`¿Resetear el período de ${rowData.producto} — ${rowData.esquema}? Se borrarán los estados de Resumen, Consolidado y Correo.`)) return;
+
+  const cols = ['resumen', 'consolidado', 'correo'];
+  const letters = cols.map(c => String.fromCharCode(65 + (rowData.colIdx[c] >= 0 ? rowData.colIdx[c] : 0)));
+  const updates = letters.map(letter => ({ range: `${letter}${rowData.sheetRow}`, value: '' }));
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/updatesheetcells`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        spreadsheetId: configApsConfig.id,
+        sheetName: configApsConfig.sheetName,
+        editableColumns: letters,
+        updates
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    cols.forEach(c => { currentConfigApsRows[idx][c] = ''; });
+    renderConfigApsCards();
+  } catch (err) {
+    alert(`Error al resetear: ${err.message}`);
+    console.error('Error reseteando período:', err.message);
+  }
+}
+
+async function loadConfigApsData() {
+  if (!hasAccessToSection('config-aps')) return;
+
+  elements.configApsTitle.textContent = configApsConfig.nombre;
+  elements.configApsStatus.textContent = 'Cargando...';
+  elements.configApsStatus.style.color = '#334155';
+  elements.configApsWrapper.innerHTML = '';
+
+  try {
+    const data = await fetchSingleSheetData(configApsConfig.id, configApsConfig.sheetName);
+    const grid = buildGridFromSheet(data, 'A1:J500');
+    currentConfigApsRows = parseConfigApsRows(grid);
+    populateConfigApsFilters();
+    renderConfigApsCards();
+  } catch (err) {
+    elements.configApsStatus.textContent = `Error al leer datos: ${err.message}`;
+    elements.configApsStatus.style.color = '#b91c1c';
+  }
+}
+
 function resetDetalleIndicadoresState() {
   currentDetalleIndicadoresGrid = [];
   currentDetalleIndicadoresHeaderInfo = null;
@@ -477,6 +813,9 @@ function clearSessionUi() {
   avanceComisionesConfig.id = null;
   resetOrganigramaState();
   resetOrganigramaBaState();
+  resetConfigApsState();
+  appsScriptAccessToken = null;
+  appsScriptTokenExpiry = 0;
   resetPoliticasState();
   resetRentabilidadState();
   elements.loginForm.reset();
@@ -540,10 +879,27 @@ async function handleGoogleCredentialResponse(response) {
     }
 
     showAppForUser(data.user);
+    requestAppsScriptAccessToken();
   } catch (err) {
     console.error('Error login google:', err.message);
     setLoginStatus(err.message, true);
   }
+}
+
+function requestAppsScriptAccessToken() {
+  if (!GOOGLE_CLIENT_ID || !window.google?.accounts?.oauth2) return;
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/script.external_request',
+      callback: (resp) => {
+        if (resp.error || !resp.access_token) return;
+        appsScriptAccessToken = resp.access_token;
+        appsScriptTokenExpiry = Date.now() + ((resp.expires_in || 3600) - 60) * 1000;
+      }
+    });
+    client.requestAccessToken({ prompt: '' });
+  } catch (_) {}
 }
 
 function initGoogleLogin(attempt = 0) {
@@ -3944,6 +4300,11 @@ function changeSection(sectionId) {
 
   if (sectionId === 'organigrama-ba') {
     loadOrganigramaBaData();
+    return;
+  }
+
+  if (sectionId === 'config-aps') {
+    loadConfigApsData();
   }
 }
 
@@ -4001,6 +4362,17 @@ function init() {
   elements.avanceComisionesRefreshBtn.addEventListener("click", loadAvanceComisionesData);
   elements.organigramaRefreshBtn.addEventListener("click", loadOrganigramaData);
   elements.organigramaBaRefreshBtn.addEventListener("click", loadOrganigramaBaData);
+  elements.configApsRefreshBtn.addEventListener("click", loadConfigApsData);
+  elements.configApsProductoSelect.addEventListener("change", (e) => {
+    configApsFilterProducto = e.target.value;
+    configApsFilterEsquema = 'Todo';
+    updateConfigApsEsquemaOptions();
+    renderConfigApsCards();
+  });
+  elements.configApsEsquemaSelect.addEventListener("change", (e) => {
+    configApsFilterEsquema = e.target.value;
+    renderConfigApsCards();
+  });
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 
   // Agregar navegación por secciones

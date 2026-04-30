@@ -1441,3 +1441,77 @@ td.cell-icon {
 .org-chart ul.is-vertical > li:last-child::after {
   height: 50%;
 }
+
+/* ── CONFIG APS ─────────────────────────────────────────── */
+.config-aps-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.config-aps-card { border: 1px solid #e2e8f0; border-radius: 0.5rem; overflow: hidden; }
+
+.config-aps-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1rem; background: #f8fafc; cursor: pointer; user-select: none;
+}
+.config-aps-card-header:hover { background: #f1f5f9; }
+.config-aps-card-title { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
+.config-aps-card-subtitle { font-size: 0.8rem; color: #64748b; }
+.config-aps-card-toggle { font-size: 0.75rem; color: #94a3b8; transition: transform 0.2s; }
+.config-aps-card.expanded .config-aps-card-toggle { transform: rotate(180deg); }
+
+.config-aps-card-body {
+  display: none; padding: 1rem; border-top: 1px solid #e2e8f0; background: #fff;
+}
+.config-aps-card.expanded .config-aps-card-body { display: block; }
+
+.config-aps-id-row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+.config-aps-id-input {
+  flex: 1; padding: 0.4rem 0.6rem; border: 1px solid #cbd5e1;
+  border-radius: 0.375rem; font-size: 0.85rem; font-family: monospace;
+}
+.config-aps-id-input:focus { outline: none; border-color: #3b82f6; }
+
+.config-aps-save-btn {
+  padding: 0.35rem 0.75rem; border-radius: 0.375rem; border: 1px solid #cbd5e1;
+  background: white; color: #374151; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+}
+.config-aps-save-btn:hover { background: #f1f5f9; }
+
+.config-aps-clear-id-btn {
+  padding: 0.35rem 0.6rem; border-radius: 0.375rem; border: 1px solid #fca5a5;
+  background: white; color: #dc2626; font-size: 0.85rem; cursor: pointer; line-height: 1;
+}
+.config-aps-clear-id-btn:hover:not(:disabled) { background: #fee2e2; }
+.config-aps-clear-id-btn:disabled { opacity: 0.35; cursor: not-allowed; border-color: #cbd5e1; color: #9ca3af; }
+
+.config-aps-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.config-aps-action-row {
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.config-aps-action-name { min-width: 110px; font-weight: 500; font-size: 0.875rem; color: #374151; }
+
+.config-aps-status {
+  flex: 1; font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 9999px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; text-align: center;
+}
+.config-aps-status.status-empty    { background: #f1f5f9; color: #94a3b8; }
+.config-aps-status.status-ejecutar { background: #dbeafe; color: #1d4ed8; }
+.config-aps-status.status-procesando { background: #fef3c7; color: #92400e; }
+.config-aps-status.status-finalizado  { background: #dcfce7; color: #15803d; }
+.config-aps-status.status-error    { background: #fee2e2; color: #b91c1c; }
+
+.config-aps-action-btn {
+  padding: 0.35rem 0.85rem; border-radius: 0.375rem; border: none;
+  background: #3b82f6; color: white; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.config-aps-action-btn:hover:not(:disabled) { background: #2563eb; }
+.config-aps-action-btn:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+
+.config-aps-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #f1f5f9;
+  font-size: 0.8rem; color: #64748b;
+}
+.config-aps-reset-btn {
+  padding: 0.3rem 0.75rem; border-radius: 0.375rem; border: 1px solid #e2e8f0;
+  background: white; color: #64748b; font-size: 0.8rem; cursor: pointer;
+}
+.config-aps-reset-btn:hover { background: #f8fafc; color: #374151; }

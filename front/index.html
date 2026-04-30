@@ -90,6 +90,10 @@
           <span class="nav-icon">🧩</span>
           <span class="nav-label">Gestión de comisiones</span>
         </button>
+        <button class="nav-item" data-section="config-aps">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">Gestión de Comisiones II</span>
+        </button>
         <button class="nav-item" data-section="detalle-indicadores">
           <span class="nav-icon">🗂️</span>
           <span class="nav-label">Detalle Indicadores</span>
@@ -265,6 +269,21 @@
           <h2 id="organigramaBaTitle">Organigrama BA</h2>
           <div id="organigramaBaStatus" class="status">Abre esta sección para cargar la información.</div>
           <div id="organigramaBaWrapper"></div>
+        </section>
+      </section>
+
+      <section id="config-aps-section" class="section">
+        <section class="controls">
+          <label for="configApsProductoSelect">Producto</label>
+          <select id="configApsProductoSelect"></select>
+          <label for="configApsEsquemaSelect">Esquema</label>
+          <select id="configApsEsquemaSelect"></select>
+          <button id="configApsRefreshBtn" type="button">Actualizar datos</button>
+        </section>
+        <section class="data-area">
+          <h2 id="configApsTitle">Automatizaciones</h2>
+          <div id="configApsStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="configApsWrapper"></div>
         </section>
       </section>
 

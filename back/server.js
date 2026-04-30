@@ -16,7 +16,7 @@ const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg';
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
-  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes', 'organigrama_comisional', 'organigrama_ba'],
+  [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes', 'organigrama_comisional', 'organigrama_ba', 'config_aps'],
 };
 const ENV_PATH = path.join(__dirname, '.env');
 const MIME_TYPES = {
@@ -33,6 +33,7 @@ const MIME_TYPES = {
 
 let credentialsCache = null;
 let tokenCache = null;
+let appsScriptTokenCache = null;
 let esquemasComisionalesCache = null;
 let esquemasComisionalesCacheAt = 0;
 const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -114,7 +115,8 @@ const SECTION_DICTIONARY = {
   'doc-h': 'detalle-indicadores',
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
-  'doc-k': 'organigrama-ba'
+  'doc-k': 'organigrama-ba',
+  'doc-l': 'config-aps'
 };
 const ROLE_DEFINITIONS = {
   administrador: {
@@ -122,7 +124,7 @@ const ROLE_DEFINITIONS = {
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -131,6 +133,8 @@ const ROLE_DEFINITIONS = {
     allowedSpreadsheetIds: [SEGUIMIENTO_SPREADSHEET_ID, GESTION_COMISIONES_SPREADSHEET_ID]
   }
 };
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || '';
+const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET || '';
 const USER_CONFIG = buildUserConfig();
 const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
 
@@ -343,6 +347,61 @@ async function getGoogleAccessToken() {
   };
 
   return tokenCache.accessToken;
+}
+
+async function getAppsScriptToken() {
+  if (appsScriptTokenCache && appsScriptTokenCache.expiresAt > Date.now() + 60_000) {
+    return appsScriptTokenCache.accessToken;
+  }
+
+  const impersonateEmail = process.env.APPS_SCRIPT_IMPERSONATE_EMAIL;
+  if (!impersonateEmail) {
+    throw new Error('APPS_SCRIPT_IMPERSONATE_EMAIL no configurado en variables de entorno.');
+  }
+
+  const credentials = loadCredentials();
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: credentials.client_email,
+    sub: impersonateEmail,
+    scope: 'https://www.googleapis.com/auth/script.external_request',
+    aud: credentials.token_uri || 'https://oauth2.googleapis.com/token',
+    exp: issuedAt + 3600,
+    iat: issuedAt
+  };
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const unsignedToken = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}`;
+  const signature = crypto
+    .createSign('RSA-SHA256')
+    .update(unsignedToken)
+    .sign(credentials.private_key, 'base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  const assertion = `${unsignedToken}.${signature}`;
+
+  const tokenBody = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion
+  });
+
+  const response = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenBody
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error_description || data.error || 'No se pudo obtener token para Apps Script.');
+  }
+
+  appsScriptTokenCache = {
+    accessToken: data.access_token,
+    expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000
+  };
+
+  return appsScriptTokenCache.accessToken;
 }
 
 async function googleSheetsRequest(endpoint, params = {}) {
@@ -1351,6 +1410,99 @@ async function handleSheetData(req, res, url) {
   });
 }
 
+async function handleRunScript(req, res) {
+  if (!validateOrigin(req, res)) return;
+
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.allowedSections.includes('doc-l')) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para ejecutar automatizaciones.' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await parseJsonBody(req);
+  } catch {
+    sendJson(req, res, 400, { error: 'Cuerpo de petición inválido.' });
+    return;
+  }
+
+  const action = String(body.action || '').trim().toLowerCase();
+  const fila = Number(body.fila);
+
+  if (!['resumen', 'consolidado', 'correo'].includes(action)) {
+    sendJson(req, res, 400, { error: 'Acción no válida.' });
+    return;
+  }
+
+  if (!Number.isInteger(fila) || fila < 9) {
+    sendJson(req, res, 400, { error: 'Número de fila no válido.' });
+    return;
+  }
+
+  if (!APPS_SCRIPT_URL) {
+    sendJson(req, res, 503, { error: 'Apps Script no configurado en el servidor.' });
+    return;
+  }
+
+  const userAccessToken = typeof body.accessToken === 'string' && body.accessToken.length > 20
+    ? body.accessToken
+    : null;
+
+  let accessToken;
+  if (userAccessToken) {
+    accessToken = userAccessToken;
+  } else {
+    try {
+      accessToken = await getAppsScriptToken();
+    } catch (err) {
+      console.error('Error obteniendo token para Apps Script:', err.message);
+      const msg = IS_PRODUCTION
+        ? 'Esta acción requiere iniciar sesión con Google.'
+        : err.message;
+      sendJson(req, res, 500, { error: msg });
+      return;
+    }
+  }
+
+  let appsResponse;
+  try {
+    appsResponse = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({ action, fila, secret: APPS_SCRIPT_SECRET }),
+      redirect: 'follow'
+    });
+  } catch (err) {
+    console.error('Error llamando Apps Script:', err.message);
+    const msg = IS_PRODUCTION ? 'No se pudo conectar con Apps Script.' : err.message;
+    sendJson(req, res, 500, { error: msg });
+    return;
+  }
+
+  let appsData;
+  try {
+    appsData = await appsResponse.json();
+  } catch {
+    const text = await appsResponse.text().catch(() => '(no text)');
+    console.error('Apps Script respuesta no-JSON. Status:', appsResponse.status, '| Body:', text.slice(0, 300));
+    sendJson(req, res, 500, { error: 'Respuesta inválida de Apps Script.' });
+    return;
+  }
+
+  if (!appsData.ok) {
+    sendJson(req, res, 500, { error: appsData.error || 'Error al ejecutar el script.' });
+    return;
+  }
+
+  sendJson(req, res, 200, { ok: true });
+}
+
 async function requestHandler(req, res) {
   // Forzado de HTTPS en producción
   if (IS_PRODUCTION && req.headers['x-forwarded-proto'] === 'http') {
@@ -1442,6 +1594,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/appendsheetrow') {
       await handleAppendSheetRow(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/run-script') {
+      await handleRunScript(req, res);
       return;
     }
 
