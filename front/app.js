@@ -351,8 +351,6 @@ function resetOrganigramaBaState() {
 
 let correoValidatedData = null;
 let correoAllRows = [];
-let appsScriptAccessToken = null;
-let appsScriptTokenExpiry = 0;
 
 function resetCorreoState() {
   correoValidatedData = null;
@@ -470,34 +468,6 @@ async function ejecutarCorreo() {
     return;
   }
 
-  if (!appsScriptAccessToken || Date.now() >= appsScriptTokenExpiry) {
-    if (GOOGLE_CLIENT_ID && window.google?.accounts?.oauth2) {
-      try {
-        await new Promise((resolve, reject) => {
-          const client = google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/script.external_request',
-            callback: (resp) => {
-              if (resp.error || !resp.access_token) { reject(new Error(resp.error || 'Sin token')); return; }
-              appsScriptAccessToken = resp.access_token;
-              appsScriptTokenExpiry = Date.now() + ((resp.expires_in || 3600) - 60) * 1000;
-              resolve();
-            }
-          });
-          client.requestAccessToken();
-        });
-      } catch (_) {
-        elements.correoStatus.textContent = 'Se necesita autorización de Google. Acepta el permiso e intenta de nuevo.';
-        elements.correoStatus.style.color = '#b91c1c';
-        return;
-      }
-    } else {
-      elements.correoStatus.textContent = 'Esta acción requiere iniciar sesión con Google.';
-      elements.correoStatus.style.color = '#b91c1c';
-      return;
-    }
-  }
-
   elements.correoStatus.textContent = 'Ejecutando...';
   elements.correoStatus.style.color = '#334155';
   elements.correoEjecutarBtn.disabled = true;
@@ -512,10 +482,6 @@ async function ejecutarCorreo() {
       destinatarios: correoValidatedData.destinatarios,
       cc: correoValidatedData.cc
     };
-    if (appsScriptAccessToken && Date.now() < appsScriptTokenExpiry) {
-      scriptBody.accessToken = appsScriptAccessToken;
-    }
-
     const res = await authFetch(`${API_BASE_URL}/api/run-script`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -683,8 +649,6 @@ function clearSessionUi() {
   resetOrganigramaState();
   resetOrganigramaBaState();
   resetCorreoState();
-  appsScriptAccessToken = null;
-  appsScriptTokenExpiry = 0;
   resetPoliticasState();
   resetRentabilidadState();
   elements.loginForm.reset();
@@ -748,27 +712,10 @@ async function handleGoogleCredentialResponse(response) {
     }
 
     showAppForUser(data.user);
-    requestAppsScriptAccessToken();
   } catch (err) {
     console.error('Error login google:', err.message);
     setLoginStatus(err.message, true);
   }
-}
-
-function requestAppsScriptAccessToken() {
-  if (!GOOGLE_CLIENT_ID || !window.google?.accounts?.oauth2) return;
-  try {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/script.external_request',
-      callback: (resp) => {
-        if (resp.error || !resp.access_token) return;
-        appsScriptAccessToken = resp.access_token;
-        appsScriptTokenExpiry = Date.now() + ((resp.expires_in || 3600) - 60) * 1000;
-      }
-    });
-    client.requestAccessToken({ prompt: '' });
-  } catch (_) {}
 }
 
 function initGoogleLogin(attempt = 0) {

@@ -135,6 +135,9 @@ const ROLE_DEFINITIONS = {
 };
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || '';
 const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET || '';
+const APPS_SCRIPT_AUTH_MODE = ['none', 'service', 'user'].includes(String(process.env.APPS_SCRIPT_AUTH_MODE || '').toLowerCase())
+  ? String(process.env.APPS_SCRIPT_AUTH_MODE).toLowerCase()
+  : 'none';
 const USER_CONFIG = buildUserConfig();
 const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
 
@@ -1588,16 +1591,25 @@ async function handleRunScript(req, res) {
     return;
   }
 
-  const userAccessToken = typeof body.accessToken === 'string' && body.accessToken.length > 20
-    ? body.accessToken
-    : null;
+  const appsScriptHeaders = {
+    'Content-Type': 'application/json'
+  };
 
-  let accessToken;
-  if (userAccessToken) {
-    accessToken = userAccessToken;
-  } else {
+  if (APPS_SCRIPT_AUTH_MODE === 'user') {
+    const userAccessToken = typeof body.accessToken === 'string' && body.accessToken.length > 20
+      ? body.accessToken
+      : null;
+
+    if (!userAccessToken) {
+      sendJson(req, res, 500, { error: 'Esta acción requiere iniciar sesión con Google.' });
+      return;
+    }
+
+    appsScriptHeaders.Authorization = `Bearer ${userAccessToken}`;
+  } else if (APPS_SCRIPT_AUTH_MODE === 'service') {
     try {
-      accessToken = await getAppsScriptToken();
+      const serviceAccessToken = await getAppsScriptToken();
+      appsScriptHeaders.Authorization = `Bearer ${serviceAccessToken}`;
     } catch (err) {
       console.error('Error obteniendo token para Apps Script:', err.message);
       const msg = IS_PRODUCTION
@@ -1612,10 +1624,7 @@ async function handleRunScript(req, res) {
   try {
     appsResponse = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
-      },
+      headers: appsScriptHeaders,
       body: JSON.stringify({ action, idArchivo, asunto, tipoPago, periodicidad, destinatarios, cc, secret: APPS_SCRIPT_SECRET }),
       redirect: 'follow'
     });
@@ -1632,6 +1641,10 @@ async function handleRunScript(req, res) {
   } catch {
     const text = await appsResponse.text().catch(() => '(no text)');
     console.error('Apps Script respuesta no-JSON. Status:', appsResponse.status, '| Body:', text.slice(0, 300));
+    if (appsResponse.status === 401) {
+      sendJson(req, res, 500, { error: 'Apps Script rechazó la llamada con 401. Verifica el despliegue del Web App: acceso por link si usas APPS_SCRIPT_AUTH_MODE=none, o token válido si usas service/user.' });
+      return;
+    }
     sendJson(req, res, 500, { error: 'Respuesta inválida de Apps Script.' });
     return;
   }
