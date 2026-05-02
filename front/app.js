@@ -44,7 +44,7 @@ const organigramaBaConfig = {
   id: gestionComisionesConfig.id,
   sheetName: 'ORGANIGRAMA_BA'
 };
-const CORREO_SECTION_TITLE = 'Generador de correos comisiones';
+const CORREO_SECTION_TITLE = 'Generador de correos';
 const sectionDictionary = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -57,7 +57,7 @@ const sectionDictionary = {
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
-  'doc-l': 'config-aps'
+  'doc-l': 'generador-correos'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -366,7 +366,7 @@ function resetCorreoState() {
 }
 
 async function loadCorreoEsquemas() {
-  if (!hasAccessToSection('config-aps')) return;
+  if (!hasAccessToSection('generador-correos')) return;
 
   elements.correoTitle.textContent = CORREO_SECTION_TITLE;
   elements.correoStatus.textContent = 'Cargando...';
@@ -490,7 +490,7 @@ async function ejecutarCorreo() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    elements.correoStatus.textContent = 'Correo enviado correctamente.';
+    elements.correoStatus.textContent = 'Correo borrador generado correctamente.';
     elements.correoStatus.style.color = '#166534';
     elements.correoButtons.classList.add('hidden');
     correoValidatedData = null;
@@ -4119,7 +4119,7 @@ function changeSection(sectionId) {
     return;
   }
 
-  if (sectionId === 'config-aps') {
+  if (sectionId === 'generador-correos') {
     loadCorreoEsquemas();
   }
 }

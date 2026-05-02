@@ -116,7 +116,7 @@ const SECTION_DICTIONARY = {
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
-  'doc-l': 'config-aps'
+  'doc-l': 'generador-correos'
 };
 const ROLE_DEFINITIONS = {
   administrador: {
