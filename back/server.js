@@ -1421,6 +1421,22 @@ function extractFileId(url) {
   return null;
 }
 
+function buildCorreoAsunto(asuntoBase, periodicidad) {
+  const base = String(asuntoBase || '').trim();
+  const normalizedPeriodicidad = String(periodicidad || '').trim().toUpperCase();
+  const now = new Date();
+  const periodDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const year = periodDate.getFullYear();
+
+  if (normalizedPeriodicidad === 'TRIMESTRAL') {
+    const quarter = Math.floor(periodDate.getMonth() / 3) + 1;
+    return `${year}Q${quarter}_${base}`;
+  }
+
+  const month = String(periodDate.getMonth() + 1).padStart(2, '0');
+  return `${year}${month}_${base}`;
+}
+
 async function handleGetCorreoEsquemas(req, res) {
   if (!validateOrigin(req, res)) return;
   const auth = authenticateRequest(req, res);
@@ -1505,7 +1521,8 @@ async function handleValidateCorreo(req, res) {
 
     const periodicidad = String(matchRow[3] || '').trim();
     const fechaPagoRaw = matchRow[7];
-    const asunto = String(matchRow[9] || '').trim();
+    const asuntoBase = String(matchRow[9] || '').trim();
+    const asunto = buildCorreoAsunto(asuntoBase, periodicidad);
 
     let fechaPagoStr = '';
     let tipoPago = 'fin_de_mes';
