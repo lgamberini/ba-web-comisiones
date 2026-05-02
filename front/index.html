@@ -12,7 +12,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260430-1" />
+  <link rel="stylesheet" href="styles.css?v=20260502-2" />
 </head>
 <body class="logged-out">
   <header id="appHeader">
@@ -91,8 +91,8 @@
           <span class="nav-label">Gestión de comisiones</span>
         </button>
         <button class="nav-item" data-section="config-aps">
-          <span class="nav-icon">⚙️</span>
-          <span class="nav-label">Gestión de Comisiones II</span>
+          <span class="nav-icon">📧</span>
+          <span class="nav-label">Generador de Correos</span>
         </button>
         <button class="nav-item" data-section="detalle-indicadores">
           <span class="nav-icon">🗂️</span>
@@ -274,16 +274,27 @@
 
       <section id="config-aps-section" class="section">
         <section class="controls">
-          <label for="configApsProductoSelect">Producto</label>
-          <select id="configApsProductoSelect"></select>
-          <label for="configApsEsquemaSelect">Esquema</label>
-          <select id="configApsEsquemaSelect"></select>
-          <button id="configApsRefreshBtn" type="button">Actualizar datos</button>
+          <label for="correoProductoSelect">Producto</label>
+          <select id="correoProductoSelect"></select>
+          <label for="correoEsquemaSelect">Esquema</label>
+          <select id="correoEsquemaSelect"></select>
+          <input id="correoUrlInput" type="text" placeholder="URL del archivo Excel" />
+          <button id="correoValidarBtn" type="button">Validar</button>
         </section>
         <section class="data-area">
-          <h2 id="configApsTitle">Automatizaciones</h2>
-          <div id="configApsStatus" class="status">Abre esta sección para cargar la información.</div>
-          <div id="configApsWrapper"></div>
+          <h2 id="correoTitle">Generador de correos comisiones</h2>
+          <div id="correoStatus" class="status">Selecciona un esquema e ingresa la URL del archivo.</div>
+          <div id="correoValidacionWrapper" class="correo-validacion hidden">
+            <div class="correo-field"><span class="correo-field-label">Asunto</span><span id="correoAsunto" class="correo-field-value"></span></div>
+            <div class="correo-field"><span class="correo-field-label">Periodicidad</span><span id="correoPeriodicidad" class="correo-field-value"></span></div>
+            <div class="correo-field"><span class="correo-field-label">Fecha de Pago</span><span id="correoFechaPago" class="correo-field-value"></span></div>
+            <div class="correo-field"><span class="correo-field-label">Destinatarios</span><span id="correoDestinatarios" class="correo-field-value"></span></div>
+            <div class="correo-field"><span class="correo-field-label">CC</span><span id="correoCC" class="correo-field-value"></span></div>
+          </div>
+          <div id="correoButtons" class="correo-buttons hidden">
+            <button id="correoLimpiarBtn" type="button">Limpiar</button>
+            <button id="correoEjecutarBtn" type="button">Ejecutar</button>
+          </div>
         </section>
       </section>
 
@@ -301,8 +312,8 @@
     </main>
   </div>
 
-  <script src="config.js?v=20260430-1"></script>
+  <script src="config.js?v=20260502-2"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260430-1"></script>
+  <script src="app.js?v=20260502-2"></script>
 </body>
 </html>

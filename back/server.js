@@ -1410,6 +1410,141 @@ async function handleSheetData(req, res, url) {
   });
 }
 
+function extractFileId(url) {
+  const trimmed = String(url || '').trim();
+  const match = trimmed.match(/\/d\/([a-zA-Z0-9_-]{25,})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+async function handleGetCorreoEsquemas(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.allowedSections.includes('doc-l')) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta sección.' });
+    return;
+  }
+
+  try {
+    const spreadsheetId = await getCachedAvanceComisionesSpreadsheetId();
+    const response = await googleSheetsRequest(`spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!D:E')}`);
+    const rows = response.values || [];
+    const dataRows = [];
+    for (const r of rows.slice(1)) {
+      const producto = String(r[0] || '').trim();
+      const esquema = String(r[1] || '').trim();
+      if (!producto && !esquema) break;
+      dataRows.push({ producto, esquema });
+    }
+    sendJson(req, res, 200, { rows: dataRows });
+  } catch (err) {
+    console.error('Error handleGetCorreoEsquemas:', err.message);
+    const msg = IS_PRODUCTION ? 'Error interno del servidor.' : err.message;
+    sendJson(req, res, 500, { error: msg });
+  }
+}
+
+async function handleValidateCorreo(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  if (!auth.user.allowedSections.includes('doc-l')) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta sección.' });
+    return;
+  }
+
+  let body;
+  try {
+    body = await parseJsonBody(req);
+  } catch {
+    sendJson(req, res, 400, { error: 'Cuerpo de petición inválido.' });
+    return;
+  }
+
+  const esquema = String(body.esquema || '').trim();
+  const url = String(body.url || '').trim();
+
+  if (!esquema || !url) {
+    sendJson(req, res, 400, { error: 'Faltan parámetros: esquema y url son requeridos.' });
+    return;
+  }
+
+  const idArchivo = extractFileId(url);
+  if (!idArchivo) {
+    sendJson(req, res, 400, { error: 'No se pudo extraer el ID del archivo de la URL proporcionada.' });
+    return;
+  }
+
+  try {
+    const spreadsheetId = await getCachedAvanceComisionesSpreadsheetId();
+
+    // Fetch CRONOGRAMA columns E through N (E=esquema, H=periodicidad, L=fechaPago, N=asunto)
+    const cronoResponse = await googleSheetsRequest(
+      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!E:N')}`
+    );
+    const rows = cronoResponse.values || [];
+    const dataRows = [];
+    for (const r of rows.slice(1)) {
+      if (!String(r[0] || '').trim()) break;
+      dataRows.push(r);
+    }
+
+    // In range E:N, offsets: E=0, F=1, G=2, H=3, I=4, J=5, K=6, L=7, M=8, N=9
+    const matchRow = dataRows.find(row => String(row[0] || '').trim() === esquema);
+    if (!matchRow) {
+      sendJson(req, res, 404, { error: `No se encontró el esquema "${esquema}" en CRONOGRAMA.` });
+      return;
+    }
+
+    const periodicidad = String(matchRow[3] || '').trim();
+    const fechaPagoRaw = matchRow[7];
+    const asunto = String(matchRow[9] || '').trim();
+
+    let fechaPagoStr = '';
+    let tipoPago = 'fin_de_mes';
+    if (fechaPagoRaw !== undefined && fechaPagoRaw !== '') {
+      const serial = Number(fechaPagoRaw);
+      if (!isNaN(serial) && serial > 25569) {
+        const jsDate = new Date((serial - 25569) * 86400 * 1000);
+        const day = jsDate.getUTCDate();
+        const month = jsDate.getUTCMonth() + 1;
+        const year = jsDate.getUTCFullYear();
+        fechaPagoStr = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+        tipoPago = day <= 15 ? 'quincena' : 'fin_de_mes';
+      } else {
+        fechaPagoStr = String(fechaPagoRaw).trim();
+      }
+    }
+
+    // Fetch INPUTS sheet: R4:T5 — quincena in col R (idx 0), fin de mes in col T (idx 2)
+    const inputsResponse = await googleSheetsRequest(
+      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('INPUTS!R4:T5')}`
+    );
+    const inputsRows = inputsResponse.values || [];
+    const row4 = inputsRows[0] || [];
+    const row5 = inputsRows[1] || [];
+
+    let destinatarios, cc;
+    if (tipoPago === 'quincena') {
+      destinatarios = String(row4[0] || '').trim();
+      cc = String(row5[0] || '').trim();
+    } else {
+      destinatarios = String(row4[2] || '').trim();
+      cc = String(row5[2] || '').trim();
+    }
+
+    sendJson(req, res, 200, { asunto, periodicidad, fechaPago: fechaPagoStr, destinatarios, cc, idArchivo, tipoPago });
+  } catch (err) {
+    console.error('Error handleValidateCorreo:', err.message);
+    const msg = IS_PRODUCTION ? 'Error interno del servidor.' : err.message;
+    sendJson(req, res, 500, { error: msg });
+  }
+}
+
 async function handleRunScript(req, res) {
   if (!validateOrigin(req, res)) return;
 
@@ -1430,15 +1565,21 @@ async function handleRunScript(req, res) {
   }
 
   const action = String(body.action || '').trim().toLowerCase();
-  const fila = Number(body.fila);
 
-  if (!['resumen', 'consolidado', 'correo'].includes(action)) {
+  if (!['correo'].includes(action)) {
     sendJson(req, res, 400, { error: 'Acción no válida.' });
     return;
   }
 
-  if (!Number.isInteger(fila) || fila < 9) {
-    sendJson(req, res, 400, { error: 'Número de fila no válido.' });
+  const idArchivo = String(body.idArchivo || '').trim();
+  const asunto = String(body.asunto || '').trim();
+  const tipoPago = String(body.tipoPago || '').trim();
+  const periodicidad = String(body.periodicidad || '').trim();
+  const destinatarios = String(body.destinatarios || '').trim();
+  const cc = String(body.cc || '').trim();
+
+  if (!idArchivo || !asunto || !tipoPago) {
+    sendJson(req, res, 400, { error: 'Faltan parámetros para la acción correo.' });
     return;
   }
 
@@ -1475,7 +1616,7 @@ async function handleRunScript(req, res) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       },
-      body: JSON.stringify({ action, fila, secret: APPS_SCRIPT_SECRET }),
+      body: JSON.stringify({ action, idArchivo, asunto, tipoPago, periodicidad, destinatarios, cc, secret: APPS_SCRIPT_SECRET }),
       redirect: 'follow'
     });
   } catch (err) {
@@ -1594,6 +1735,16 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/appendsheetrow') {
       await handleAppendSheetRow(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/correo-esquemas') {
+      await handleGetCorreoEsquemas(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/correo-validate') {
+      await handleValidateCorreo(req, res);
       return;
     }
 
