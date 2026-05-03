@@ -1,4 +1,11 @@
+/**
+ * Aplicación principal de Web Comisiones
+ * Maneja toda la lógica del frontend: autenticación, navegación, renderizado de datos
+ */
+
+// Configuración de hojas de Google Sheets
 let sheetConfig = [];
+// Configuración paraResumen de Avance (Seguimiento de Automatizaciones)
 const resumenAvanceConfig = {
   nombre: "Seguimiento de Automatizaciones",
   id: "1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc",
@@ -6,7 +13,7 @@ const resumenAvanceConfig = {
   secondarySheet: 'avance'
 };
 
-// Configuración del Google Sheet de Seguimiento
+// Configuración del Google Sheet de Seguimiento de Excepciones
 const seguimientoSheetConfig = { 
   nombre: "Seguimiento de Excepciones", 
   id: "1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs" 
@@ -44,7 +51,10 @@ const organigramaBaConfig = {
   id: gestionComisionesConfig.id,
   sheetName: 'ORGANIGRAMA_BA'
 };
+// Título de la sección de generador de correos
 const CORREO_SECTION_TITLE = 'Generador de correos';
+
+// Diccionario de secciones - mapea códigos a IDs de sección en HTML
 const sectionDictionary = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -63,11 +73,15 @@ const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
 );
 
+// Hojas que se excluyen de la lista (no se muestran al usuario)
 const excludes = ["indice", "info", "modelo esquemas"];
+
+// URLs y configuración desde config.js
 const API_BASE_URL = getApiBaseUrl();
 const GOOGLE_CLIENT_ID = getGoogleClientId();
 const IS_LOCAL_ENV = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
+// Referencias a elementos del DOM para manipulation
 const elements = {
   loginView: document.getElementById("loginView"),
   appShell: document.getElementById("appShell"),
@@ -153,12 +167,15 @@ const elements = {
   correoEjecutarBtn: document.getElementById("correoEjecutarBtn"),
 };
 
-let currentProduct = null;
-let currentSheet = null;
-let currentSeguimientoSheet = null;
-let autoRefreshId = null;
-let inactivityTimer = null;
-const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 hora
+// Estado actual de la aplicación
+let currentProduct = null;         // Producto seleccionado en Visualizado
+let currentSheet = null;          // Hoja seleccionada
+let currentSeguimientoSheet = null; // Hoja seleccionada en Seguimiento
+let autoRefreshId = null;         // ID del interval de auto-refresh
+let inactivityTimer = null;       // Timer de inactividad para logout automático
+
+// Timeout de inactividad - cierra sesión después de 1 hora sin actividad
+const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
 
 function resetInactivityTimer() {
   if (!currentUser) return;

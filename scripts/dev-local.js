@@ -1,16 +1,25 @@
+/**
+ * Script de desarrollo local
+ * Levanta simultáneamente el backend (Node.js) y frontend (Python)
+ * para facilitar el desarrollo sin necesidad de despliegue
+ */
+
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+// Rutas de directorios y archivos
 const rootDir = path.resolve(__dirname, '..');
 const rootEnvPath = path.join(rootDir, '.env');
 const backDir = path.join(rootDir, 'back');
 const frontDir = path.join(rootDir, 'front');
 const backEnvPath = path.join(backDir, '.env');
 
+// Procesos activos para poder finalizarlos correctamente
 const processes = [];
 let isShuttingDown = false;
 
+// Verifica que exista el archivo .env en back/ o lo copia de la raíz
 function ensureBackEnv() {
   if (fs.existsSync(backEnvPath)) {
     return;
@@ -49,6 +58,7 @@ function prefixStream(stream, label) {
   });
 }
 
+// Inicia un proceso hijo y maneja su ciclo de vida
 function startProcess(label, command, args, cwd) {
   const child = spawn(command, args, {
     cwd,
@@ -59,11 +69,9 @@ function startProcess(label, command, args, cwd) {
   prefixStream(child.stdout, label);
   prefixStream(child.stderr, `${label}:error`);
 
+  // Si el proceso termina con error, cierra toda la aplicación
   child.on('exit', code => {
-    if (isShuttingDown) {
-      return;
-    }
-
+    if (isShuttingDown) return;
     if (code !== 0) {
       console.error(`[${label}] termino con codigo ${code}`);
       shutdown(code || 1);
@@ -78,6 +86,7 @@ function startProcess(label, command, args, cwd) {
   return child;
 }
 
+// Cierra todos los procesos hijos de manera ordenada
 function shutdown(exitCode = 0) {
   if (isShuttingDown) {
     return;

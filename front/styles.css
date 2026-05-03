@@ -1,6 +1,13 @@
+/* ============================================
+   Estilos de Web Comisiones
+   Diseño responsive con breakpoints para tablet, móvil y teléfono
+   ============================================ */
+
+/* Reset y estilos base */
 * { box-sizing: border-box; }
 body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #f7f9fb; color: #1f2937; }
 .hidden { display: none !important; }
+/* Estados de autenticación - controla visibilidad según login */
 body.logged-out {
   min-height: 100vh;
   background:
@@ -15,6 +22,8 @@ body.logged-out #appShell {
 body.logged-in #loginView {
   display: none !important;
 }
+
+/* Header - barra superior con título y controls de sesión */
 header { background: #0f172a; color: #fff; padding: 1rem 1.5rem; }
 .header-content {
   width: min(1600px, 100%);
@@ -31,6 +40,7 @@ header { background: #0f172a; color: #fff; padding: 1rem 1.5rem; }
 header h1 { margin: 0; font-size: 1.4rem; }
 header p { margin: 0.4rem 0 0; font-size: 0.95rem; color: #cbd5e1; }
 
+/* Login - formulario de autenticación */
 .login-view {
   min-height: 100vh;
   display: flex;
@@ -39,6 +49,7 @@ header p { margin: 0.4rem 0 0; font-size: 0.95rem; color: #cbd5e1; }
   padding: 2rem 1rem;
 }
 
+/* Tarjeta de login con formulario */
 .login-card {
   width: min(520px, 100%);
   background: #fff;
@@ -175,6 +186,7 @@ header p { margin: 0.4rem 0 0; font-size: 0.95rem; color: #cbd5e1; }
   color: #334155;
 }
 
+/* Layout con sidebar - contenedor principal */
 .container-with-sidebar {
   display: flex;
   gap: 0;
@@ -182,6 +194,7 @@ header p { margin: 0.4rem 0 0; font-size: 0.95rem; color: #cbd5e1; }
   min-height: calc(100vh - 88px);
 }
 
+/* Sidebar - navegación lateral */
 .sidebar { 
   width: 300px; 
   background: #1e293b; 
@@ -435,6 +448,7 @@ main {
   border-radius: 0.8rem;
   background: #fff;
 }
+/* Chips de estado - indicadores visuales de progreso */
 .avance-chip {
   display: inline-flex;
   align-items: center;
@@ -445,22 +459,10 @@ main {
   font-weight: 800;
   letter-spacing: 0.01em;
 }
-.avance-chip.is-todo {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-.avance-chip.is-doing {
-  background: #fef3c7;
-  color: #b45309;
-}
-.avance-chip.is-review {
-  background: #e0e7ff;
-  color: #5b21b6;
-}
-.avance-chip.is-done {
-  background: #dcfce7;
-  color: #15803d;
-}
+.avance-chip.is-todo {   background: #fee2e2; color: #b91c1c; }   /* Por hacer */
+.avance-chip.is-doing {  background: #fef3c7; color: #b45309; }   /* En progreso */
+.avance-chip.is-review { background: #e0e7ff; color: #5b21b6; }  /* En revisión */
+.avance-chip.is-done {   background: #dcfce7; color: #15803d; }   /* Completado */
 .avance-summary-count {
   color: #475569;
   font-weight: 600;
@@ -1137,7 +1139,11 @@ td.cell-icon {
 }
 
 
-/* ── Responsive: tablet (≤ 900px) ──────────────────────────── */
+/* ============================================
+   Responsive Design - Media Queries
+   ============================================ */
+
+/* ── Tablet (≤ 900px) ──────────────────────────── */
 @media (max-width: 900px) {
   /* Header */
   header { padding: 0.6rem 1rem; }
@@ -1256,7 +1262,9 @@ td.cell-icon {
   .links-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Organigrama ─────────────────────────────────────────── */
+/* ============================================
+   Organigrama - Diseño jerárquico
+   ============================================ */
 .org-filter-bar {
   display: flex;
   align-items: center;
@@ -1516,6 +1524,9 @@ td.cell-icon {
 }
 .config-aps-reset-btn:hover { background: #f8fafc; color: #374151; }
 
+/* ============================================
+   Generador de Correos - Formulario y validación
+   ============================================ */
 .correo-validacion {
   display: flex; flex-direction: column; gap: 0.5rem;
   background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem;

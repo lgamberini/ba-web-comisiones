@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Previene caché para garantizar datos actualizados -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+  <!-- Content Security Policy - especifica qué recursos pueden cargarse -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com; connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <title>HOLDING COMMISSIONS</title>
   <link
@@ -15,12 +17,14 @@
   <link rel="stylesheet" href="styles.css?v=20260502-2" />
 </head>
 <body class="logged-out">
+  <!-- Header de la aplicación - muestra título y controls de sesión -->
   <header id="appHeader">
     <div class="header-content">
       <div class="header-brand">
         <h1>HOLDING COMMISSIONS</h1>
         <p>Productos: Préstamos, Gestora, Cambio Seguro y Factoring</p>
       </div>
+      <!-- Barra de sesión - muestra rol actual y botón de logout -->
       <section class="session-bar">
         <span id="sessionRole"></span>
         <button id="logoutBtn" type="button">Cerrar sesión</button>
@@ -29,6 +33,7 @@
     </div>
   </header>
 
+  <!-- Vista de login - formulario de autenticación -->
   <section id="loginView" class="login-view">
     <form id="loginForm" class="login-card">
       <h2>Holding Commissions</h2>
@@ -59,9 +64,12 @@
     </form>
   </section>
 
+  <!-- Shell principal de la aplicación - visible tras login exitoso -->
   <div id="appShell" class="container-with-sidebar hidden">
+    <!-- Sidebar - navegación lateral con todas las secciones disponibles -->
     <aside class="sidebar">
       <nav class="sidebar-nav">
+        <!-- Botones de navegación - cada uno corresponde a una sección -->
         <button class="nav-item" data-section="avance-comisiones">
           <span class="nav-icon">⏱️</span>
           <span class="nav-label">Avance Comisiones</span>
@@ -117,7 +125,8 @@
     </aside>
 
     <main class="main-content">
-      <!-- Sección Visualizado de Comisiones -->
+      <!-- Sección: Visualizado - Esquemas Comisionales (doc-b) -->
+      <!-- Permite seleccionar productos y hojas de Google Sheets -->
       <section id="visualizado-section" class="section">
         <section class="controls">
           <label for="productSelect">Seleccionar producto</label>
@@ -151,6 +160,7 @@
         </section>
       </section>
 
+      <!-- Sección: Políticas (doc-d) - Documento embebido de Google Docs -->
       <section id="politicas-section" class="section">
         <section class="data-area">
           <h2 id="politicasTitle">Politicas de comisiones</h2>
@@ -168,6 +178,7 @@
         </section>
       </section>
 
+      <!-- Sección: Rentabilidad (doc-e) - Dashboard embebido de Power BI -->
       <section id="rentabilidad-section" class="section">
         <section class="data-area">
           <h2 id="rentabilidadTitle">Dash de rentabilidad</h2>
@@ -186,7 +197,7 @@
         </section>
       </section>
 
-      <!-- Sección Seguimiento de Comisiones -->
+      <!-- Sección: Seguimiento de Excepciones (doc-f) - Hoja editable -->
       <section id="seguimiento-section" class="section">
         <section class="sheet-area">
           <label for="seguimientoSheetSelect">Seleccionar Producto</label>
@@ -200,6 +211,7 @@
         </section>
       </section>
 
+      <!-- Sección: Gestión de Comisiones (doc-g) - Links a plantillas y recursos -->
       <section id="gestion-comisiones-section" class="section">
         <section class="controls">
           <label for="gestionProductoSelect">Seleccionar producto</label>
@@ -272,6 +284,7 @@
         </section>
       </section>
 
+      <!-- Sección: Generador de Correos (doc-l) - Validación y ejecución de correos automáticos -->
       <section id="generador-correos-section" class="section">
         <section class="controls">
           <label for="correoProductoSelect">Producto</label>
@@ -298,6 +311,7 @@
         </section>
       </section>
 
+      <!-- Sección: Avance Comisiones (doc-a) - Resumen de cronograma de comisiones -->
       <section id="avance-comisiones-section" class="section">
         <section class="controls">
           <button id="avanceComisionesRefreshBtn" type="button">Actualizar datos</button>

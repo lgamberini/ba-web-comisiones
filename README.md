@@ -1,92 +1,90 @@
-# Visualizador de Comisiones
+# HOLDING COMMISSIONS
 
-Aplicación separada en `front/` y `back/` para publicar el frontend en GitHub Pages y desplegar el backend en otro servicio.
+Aplicación web para visualizar y gestionar información de comisiones de productos financieros (Préstamos, Gestora, Cambio Seguro y Factoring). La aplicación consume datos directamente de Google Sheets mediante APIs de Google.
 
-## Estructura
+## Arquitectura
 
-- `front/`: archivos estáticos para GitHub Pages
-- `back/`: API en Node.js con autenticación y acceso a Google Sheets
+```
+WEB_COMISIONES/
+├── front/          # Frontend estático (HTML, CSS, JS)
+├── back/           # Backend API (Node.js)
+├── scripts/        # Scripts de desarrollo
+└── .github/        # GitHub Actions para deployment
+```
 
-## Requisitos
+- **Frontend**: Desplegado en GitHub Pages
+- **Backend**: Desplegado en Render
+
+## Requisitos Previos
 
 - Node.js 20 o superior
-- Archivo `back/.env` configurado
-- Cuenta de servicio de Google con acceso de lectura a los sheets usados por la app
+- Cuenta de servicio de Google con acceso de lectura a los Google Sheets
+- Python 3 (para desarrollo local del frontend)
 
-## Configuración del backend
+## Instalación
 
-1. Crear el archivo de entorno:
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/tu-usuario/web-comisiones.git
+cd web-comisiones
+```
+
+### 2. Configurar variables de entorno
+
+Copiar el archivo de ejemplo y configurarlo:
 
 ```bash
 cp back/.env.example back/.env
 ```
 
-2. Completar en `back/.env`:
-
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `GERENCIA_USERNAME`
-- `GERENCIA_PASSWORD`
-- `GOOGLE_CLIENT_EMAIL`
-- `GOOGLE_PRIVATE_KEY`
-- `GOOGLE_LOGIN_CLIENT_ID`
-- `GOOGLE_ROLE_EMAILS_JSON`
-- `ALLOWED_ORIGIN=https://TU_USUARIO.github.io`
-
-Si el frontend vive en otro dominio, añade también:
-
-- `COOKIE_SAMESITE=None`
-- `COOKIE_SECURE=true`
-
-## Configuración del frontend
-
-El archivo [front/config.js](/Users/lucianagamberini/Library/CloudStorage/GoogleDrive-lgamberini@prestamype.com/.shortcut-targets-by-id/1wzewbtJQv6Fr_f0uKnZrRg-jPtPM9D8a/BUSINESS ANALYTICS/OTROS/COMISIONES/DOCUMENTACION/WEB_COMISIONES/front/config.js) ya está preparado para trabajar en paralelo:
-
-- si abres el frontend en `localhost` o `127.0.0.1`, consumirá `http://127.0.0.1:3000`
-- si lo abres desde GitHub Pages, consumirá el backend público en Render
-
-Así puedes probar cambios localmente sin tener que editar la URL antes de hacer push.
-
-Para habilitar el botón de Google en el frontend, completa también:
-
-- `window.APP_CONFIG.GOOGLE_CLIENT_ID`
-
-Ese valor debe ser el mismo `client_id` web que pongas en `back/.env` como `GOOGLE_LOGIN_CLIENT_ID`.
-
-Para asignar varios correos a distintos roles con Google, usa:
+ затем editar `back/.env` con las credenciales correspondientes:
 
 ```env
-GOOGLE_ROLE_EMAILS_JSON={"administrador":["admin1@tuempresa.com","admin2@tuempresa.com"],"usuario_gerencia":["gerencia1@tuempresa.com","gerencia2@tuempresa.com"]}
+# Usuarios y contraseñas para login
+ADMIN_USERNAME=tu_admin
+ADMIN_PASSWORD=tu_password
+GERENCIA_USERNAME=tu_gerencia
+GERENCIA_PASSWORD=tu_password_gerencia
+EDITOR_USERNAME=tu_editor
+EDITOR_PASSWORD=tu_password_editor
+
+# Cuenta de servicio de Google
+GOOGLE_CLIENT_EMAIL=tu-servicio@proyecto.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+
+# Configuración de Google Sign-In
+GOOGLE_LOGIN_CLIENT_ID=tu-client-id.apps.googleusercontent.com
+GOOGLE_ROLE_EMAILS_JSON={"administrador":["admin@tuempresa.com"],"usuario_gerencia":["gerencia@tuempresa.com"]}
+
+# Configuración del servidor
+PORT=3000
+HOST=0.0.0.0
+SESSION_TTL_HOURS=12
+
+# Origen del frontend (ajustar para producción)
+ALLOWED_ORIGIN=https://tu-usuario.github.io
+
+# Configuración de cookies (para producción con dominio diferente)
+COOKIE_SAMESITE=Lax
+COOKIE_SECURE=true
 ```
 
-Si todavia tienes el formato anterior con `ADMIN_GOOGLE_EMAIL` y `GERENCIA_GOOGLE_EMAIL`, tambien sigue funcionando como compatibilidad.
+## Desarrollo Local
 
-## Ejecución local
-
-> **Comando rápido para levantar el entorno de pruebas:**
-> ```bash
-> cd ".../WEB_COMISIONES"
-> node back/server.js
-> ```
-> Luego abrí `http://localhost:3000` en el navegador.
-
-Con un solo comando desde la raiz del proyecto:
+### Opción 1: Un solo comando (recomendado)
 
 ```bash
 npm run dev-local
 ```
 
-Ese comando:
+Esto iniciara:
+- Backend en `http://127.0.0.1:3000`
+- Frontend en `http://127.0.0.1:5500`
 
-- inicia el backend en `http://127.0.0.1:3000`
-- inicia el frontend en `http://127.0.0.1:5500`
-- si `back/.env` no existe, copia el `.env` de la raiz automaticamente
+### Opción 2: Manual
 
-Para detener ambos procesos, usa `Ctrl + C`.
-
-Si prefieres levantar cada parte manualmente, puedes hacerlo asi:
-
-Instalar dependencias del backend y levantar el servidor:
+**Backend:**
 
 ```bash
 cd back
@@ -94,61 +92,87 @@ npm install
 npm start
 ```
 
-El backend queda disponible en:
-
-```text
-http://127.0.0.1:3000
-```
-
-Para probar localmente el frontend, sirve `front/` con un servidor estático:
+**Frontend:**
 
 ```bash
 cd front
 python3 -m http.server 5500
 ```
 
-Luego abre:
+Luego acceder a `http://127.0.0.1:5500`
 
-```text
-http://127.0.0.1:5500
-```
+## Roles de Usuario
 
-Si usas ese origen local, recuerda incluirlo en `back/.env`:
+| Rol | Permisos |
+|-----|-----------|
+| **Administrador** | Acceso completo a todas las secciones |
+| **Administrador Editor** | Acceso completo + edición de hojas |
+| **Usuario Gerencia** | Acceso limitado a secciones específicas |
 
-```env
-ALLOWED_ORIGIN=http://127.0.0.1:5500
-```
+## Secciones Disponibles
 
-## Variables principales
+- **Avance Comisiones**: Resumen del cronograma de comisiones
+- **Esquemas Comisionales**: Exploración de archivos en Drive
+- **Seguimiento de Automatizaciones**: Estado de automatizaciones
+- **Políticas de Comisiones**: Documento embebido
+- **Dash de Rentabilidad**: Dashboard Power BI embebido
+- **Seguimiento de Excepciones**: Hoja editable
+- **Gestión de Comisiones**: Links a plantillas y recursos
+- **Detalle Indicadores**: Vista filtrable de indicadores
+- **Links de Interés**: Recursos externos por producto
+- **Organigrama Comisional**: Estructura jerárquica
+- **Organigrama BA**: Estructura Business Analytics
+- **Generador de Correos**: Automatización de correos
 
-- `PORT`: puerto del servidor
-- `HOST`: host de ejecución
-- `SESSION_TTL_HOURS`: duración de la sesión
-- `ALLOWED_ORIGIN`: origen permitido del frontend. Acepta varios separados por coma
-- `COOKIE_SAMESITE`: por defecto `Lax`. Usa `None` si frontend y backend están en dominios distintos
-- `COOKIE_SECURE`: usa `true` para enviar cookies solo por HTTPS
-- `GOOGLE_TOKEN_URI`: endpoint de autenticación de Google
-- `GOOGLE_LOGIN_CLIENT_ID`: client ID OAuth web usado para validar el login con Google
-- `GOOGLE_ROLE_EMAILS_JSON`: objeto JSON con listas de correos por rol para login con Google
-- `ADMIN_GOOGLE_EMAIL`: formato antiguo, se mantiene por compatibilidad
-- `GERENCIA_GOOGLE_EMAIL`: formato antiguo, se mantiene por compatibilidad
-- `AVANCE_COMISIONES_SPREADSHEET_ID`: ID del Google Sheet usado por la sección `Avance Comisiones`
+## Variables de Entorno
 
-## Cambio mensual de avance
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `PORT` | Puerto del servidor | 3000 |
+| `HOST` | Host de ejecución | 0.0.0.0 |
+| `SESSION_TTL_HOURS` | Duración de sesión | 12 |
+| `ALLOWED_ORIGIN` | Orígenes permitidos (separados por coma) | - |
+| `COOKIE_SAMESITE` | SameSite cookie | Lax |
+| `COOKIE_SECURE` | Cookies solo HTTPS | false |
+| `GOOGLE_CLIENT_EMAIL` | Email de cuenta de servicio | - |
+| `GOOGLE_PRIVATE_KEY` | Clave privada RSA | - |
+| `GOOGLE_TOKEN_URI` | Endpoint OAuth Google | https://oauth2.googleapis.com/token |
+| `GOOGLE_LOGIN_CLIENT_ID` | Client ID para Google Sign-In | - |
+| `GOOGLE_ROLE_EMAILS_JSON` | JSON con correos por rol | - |
+| `AVANCE_COMISIONES_SPREADSHEET_ID` | ID del sheet de avance | - |
+| `APPS_SCRIPT_URL` | URL de Apps Script para automatizaciones | - |
+| `APPS_SCRIPT_AUTH_MODE` | Modo auth Apps Script (none/service/user) | none |
 
-Cuando cambie el archivo mensual de `Avance Comisiones`, solo actualiza en `back/.env`:
+## Actualización Mensual
+
+Cuando cambie el archivo mensual de Avance Comisiones, actualizar en `back/.env`:
 
 ```env
 AVANCE_COMISIONES_SPREADSHEET_ID=ID_DEL_NUEVO_SHEET
 ```
 
-Luego reinicia el servidor:
+Luego reiniciar el servidor.
 
-```bash
-cd back
-npm start
-```
+## Despliegue
 
-## Nota de seguridad
+### Frontend (GitHub Pages)
 
-No subas `.env`, `credential.json` ni credenciales reales al repositorio.
+Push a la rama `main` - GitHub Actions deploya automáticamente a:
+`https://tu-usuario.github.io/web-comisiones`
+
+### Backend (Render)
+
+1. Conectar el repositorio en Render
+2. Configurar las variables de entorno en el dashboard de Render
+3. El comando de build es: `npm start`
+4. Directorio de trabajo: `back`
+
+## Notas de Seguridad
+
+- No subir `.env`, credenciales reales ni archivos sensibles al repositorio
+- El `.env.example` sirve como plantilla pero no contiene valores reales
+- Las credenciales de Google deben ser de una cuenta de servicio con permisos de lectura
+
+---
+
+Para más información, consulta la documentación completa en `PROJECT_DOCUMENTATION.md`.

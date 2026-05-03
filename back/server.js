@@ -1,19 +1,32 @@
+/**
+ * Servidor principal de Web Comisiones
+ * Maneja autenticación, acceso a Google Sheets/Drive y serve de archivos estáticos
+ * No usa Express - implementación nativa con Node.js http module
+ */
+
+// Módulos nativos de Node.js
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 
+// Directorio donde se encuentran los archivos estáticos del frontend
 const STATIC_DIR = path.join(__dirname, '..', 'front');
 
+// Permisos de Google API requeridos para la aplicación
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
-const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem';
-const AVANCE_COMISIONES_ROOT_FOLDER_ID = '15VSV2I1xDUxIQZ-JZmi-OCCfOkWIV0By';
-const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs';
-const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg';
+
+// IDs de carpetas y spreadsheets en Google Drive/Sheets
+const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem'; // Folder con esquemas comisionales
+const AVANCE_COMISIONES_ROOT_FOLDER_ID = '15VSV2I1xDUxIQZ-JZmi-OCCfOkWIV0By'; // Folder raíz de cronogramas
+const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs'; // Spreadsheet de seguimiento
+const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg'; // Spreadsheet gestión comisiones
+
+// Hojas restringidas por spreadsheet - usuarios no pueden acceder a estas hojas
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
   '1UssH4gfktDmGoVR88Ch2vH3KWxiBXILyc29Bc8_6gXc': ['resumen', 'avance'],
   [GESTION_COMISIONES_SPREADSHEET_ID]: ['colab', 'detalle_indicadores', 'link_de_interes', 'organigrama_comisional', 'organigrama_ba', 'config_aps'],
@@ -31,25 +44,33 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
-let credentialsCache = null;
-let tokenCache = null;
-let appsScriptTokenCache = null;
-let esquemasComisionalesCache = null;
-let esquemasComisionalesCacheAt = 0;
-const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000;
-let avanceComisionesIdCache = null;
-let avanceComisionesIdCacheAt = 0;
-const AVANCE_COMISIONES_ID_CACHE_TTL_MS = 60 * 60 * 1000;
+// Cachés para optimizar llamadas a Google API
+let credentialsCache = null;         // Credenciales de service account
+let tokenCache = null;                // Token de acceso OAuth
+let appsScriptTokenCache = null;      // Token para Apps Script
+let esquemasComisionalesCache = null;  // Lista de archivos de esquemas
+let esquemasComisionalesCacheAt = 0;   // Timestamp de cache de esquemas
+const ESQUEMAS_COMISIONALES_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
+let avanceComisionesIdCache = null;   // ID del spreadsheet de avance comisiones
+let avanceComisionesIdCacheAt = 0;
+const AVANCE_COMISIONES_ID_CACHE_TTL_MS = 60 * 60 * 1000; // 60 minutos
+
+// Almacenamiento de sesiones activas en memoria
 const activeSessions = new Map();
 
-// Rate limiting y login brute-force
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
-const RATE_LIMIT_MAX_REQUESTS = 500;
-const LOGIN_ATTEMPT_LIMIT = 5;
-const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000; // 15 minutos
+// Rate limiting y protección contra brute-force en login
+// Configuración de rate limiting - protege contra ataques DDoS y brute-force
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // Ventana de 1 minuto
+const RATE_LIMIT_MAX_REQUESTS = 500;    // Máximo requests por IP en la ventana
+const LOGIN_ATTEMPT_LIMIT = 5;          // Máximo intentos fallidos de login
+const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000; // Bloqueo de 15 minutos tras exceder intentos
+
+// Mapas para tracking de requests y intentos de login por IP
 const ipRequestCounts = new Map();
 const loginAttempts = new Map();
+
+// Extrae la IP real del cliente considerando proxys (X-Forwarded-For)
 function getClientIp(req) {
   const xfwd = req.headers['x-forwarded-for'];
   if (xfwd) {
@@ -96,14 +117,18 @@ function registerLoginAttempt(ip, success) {
   loginAttempts.set(ip, entry);
 }
 
+// Carga variables de entorno desde archivo .env
 loadDotEnv();
 
-const SESSION_TTL_MS = Math.max(Number(process.env.SESSION_TTL_HOURS || 12), 1) * 60 * 60 * 1000;
+// Configuración del servidor desde variables de entorno
+const SESSION_TTL_MS = Math.max(Number(process.env.SESSION_TTL_HOURS || 12), 1) * 60 * 60 * 1000; // Duración de sesión (default 12h)
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || 'Lax';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
+
+// Diccionario que mapea códigos de sección a IDs de sección en la UI
 const SECTION_DICTIONARY = {
   'doc-a': 'avance-comisiones',
   'doc-b': 'visualizado',
@@ -118,6 +143,8 @@ const SECTION_DICTIONARY = {
   'doc-k': 'organigrama-ba',
   'doc-l': 'generador-correos'
 };
+// Definiciones de roles y sus permisos
+// Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
 const ROLE_DEFINITIONS = {
   administrador: {
     allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k'],
@@ -141,6 +168,8 @@ const APPS_SCRIPT_AUTH_MODE = ['none', 'service', 'user'].includes(String(proces
 const USER_CONFIG = buildUserConfig();
 const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
 
+// Carga variables de entorno desde archivo .env
+// Soporta valores con comillas y saltos de línea
 function loadDotEnv() {
   if (!fs.existsSync(ENV_PATH)) return;
 
