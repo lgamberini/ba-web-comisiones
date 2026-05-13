@@ -190,6 +190,10 @@ const elements = {
   jiraModalCommentInput: document.getElementById("jiraModalCommentInput"),
   jiraModalCommentSubmit: document.getElementById("jiraModalCommentSubmit"),
   jiraModalCommentStatus: document.getElementById("jiraModalCommentStatus"),
+  jiraModalStartDate: document.getElementById("jiraModalStartDate"),
+  jiraModalDueDate: document.getElementById("jiraModalDueDate"),
+  jiraModalStartDateStatus: document.getElementById("jiraModalStartDateStatus"),
+  jiraModalDueDateStatus: document.getElementById("jiraModalDueDateStatus"),
 };
 
 // Estado actual de la aplicación
@@ -4369,6 +4373,10 @@ async function openIssueModal(issueKey) {
   elements.jiraModalCommentCount.textContent = '0';
   elements.jiraModalCommentInput.value = '';
   elements.jiraModalCommentStatus.textContent = '';
+  elements.jiraModalStartDate.value = '';
+  elements.jiraModalDueDate.value = '';
+  elements.jiraModalStartDateStatus.textContent = '';
+  elements.jiraModalDueDateStatus.textContent = '';
   elements.jiraIssueModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 
@@ -4379,11 +4387,14 @@ async function openIssueModal(issueKey) {
 
     elements.jiraModalKey.textContent = data.key;
     elements.jiraModalTitle.textContent = data.summary;
-    const badges = [data.status, data.priority, data.assignee, data.duedate ? `Vence: ${data.duedate}` : null]
+    const badges = [data.status]
       .filter(Boolean)
       .map(b => `<span class="jira-modal-meta-badge">${b}</span>`)
       .join('');
     elements.jiraModalMeta.innerHTML = badges;
+
+    elements.jiraModalStartDate.value = data.startdate || '';
+    elements.jiraModalDueDate.value = data.duedate || '';
 
     if (data.descriptionHtml && data.descriptionHtml.trim()) {
       elements.jiraModalDescription.innerHTML = data.descriptionHtml;
@@ -4401,6 +4412,26 @@ function closeIssueModal() {
   elements.jiraIssueModal.classList.add('hidden');
   document.body.style.overflow = '';
   jiraCurrentModalIssueKey = null;
+}
+
+async function saveIssueDate(field, value, statusEl) {
+  if (!jiraCurrentModalIssueKey) return;
+  statusEl.textContent = 'Guardando...';
+  statusEl.style.color = '#64748b';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/issue`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issueKey: jiraCurrentModalIssueKey, field, value: value || null })
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Error'); }
+    statusEl.textContent = '✓';
+    statusEl.style.color = '#16a34a';
+    setTimeout(() => { statusEl.textContent = ''; }, 2000);
+  } catch (err) {
+    statusEl.textContent = err.message;
+    statusEl.style.color = '#ef4444';
+  }
 }
 
 async function submitModalComment() {
@@ -4578,6 +4609,8 @@ function init() {
   elements.jiraModalCommentSubmit.addEventListener("click", submitModalComment);
   elements.jiraModalCommentInput.addEventListener("keydown", (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitModalComment(); });
   document.addEventListener("keydown", (e) => { if (e.key === 'Escape') closeIssueModal(); });
+  elements.jiraModalStartDate.addEventListener("change", (e) => saveIssueDate('startdate', e.target.value, elements.jiraModalStartDateStatus));
+  elements.jiraModalDueDate.addEventListener("change", (e) => saveIssueDate('duedate', e.target.value, elements.jiraModalDueDateStatus));
   elements.jiraCambiarTokenBtn.addEventListener("click", () => {
     elements.jiraBoardView.classList.add('hidden');
     elements.jiraTokenForm.classList.remove('hidden');

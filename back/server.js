@@ -170,6 +170,7 @@ const USER_CONFIG = buildUserConfig();
 const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
 const JIRA_SITE = process.env.JIRA_SITE || 'prestamype.atlassian.net';
 const JIRA_TOKENS_SHEET = 'PRIVATE';
+const JIRA_START_DATE_FIELD = process.env.JIRA_START_DATE_FIELD || 'customfield_10015';
 
 // Carga variables de entorno desde archivo .env
 // Soporta valores con comillas y saltos de línea
@@ -1735,10 +1736,10 @@ async function jiraApiRequest(jiraEmail, apiToken, path, params = {}, method = '
   const headers = { Authorization: `Basic ${credentials}`, Accept: 'application/json' };
 
   let url, fetchOptions;
-  if (method === 'POST') {
+  if (method === 'POST' || method === 'PUT') {
     url = `https://${JIRA_SITE}/rest${path}`;
     headers['Content-Type'] = 'application/json';
-    fetchOptions = { method: 'POST', headers, body: JSON.stringify(params) };
+    fetchOptions = { method, headers, body: JSON.stringify(params) };
   } else {
     const urlObj = new URL(`https://${JIRA_SITE}/rest${path}`);
     Object.entries(params).forEach(([k, v]) => v != null && urlObj.searchParams.set(k, String(v)));
@@ -2071,7 +2072,7 @@ async function handleJiraGetIssue(req, res, url) {
   const data = await jiraApiRequest(
     token.jiraEmail, token.apiToken,
     `/api/3/issue/${encodeURIComponent(issueKey)}`,
-    { fields: 'summary,description,status,assignee,priority,comment,duedate' }
+    { fields: `summary,description,status,assignee,priority,comment,duedate,${JIRA_START_DATE_FIELD}` }
   );
 
   const fields = data.fields || {};
@@ -2090,8 +2091,35 @@ async function handleJiraGetIssue(req, res, url) {
     assignee: fields.assignee?.displayName || null,
     priority: fields.priority?.name || null,
     duedate: fields.duedate || null,
+    startdate: fields[JIRA_START_DATE_FIELD] || null,
+    startDateField: JIRA_START_DATE_FIELD,
     comments
   });
+}
+
+async function handleJiraUpdateIssue(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  let body;
+  try { body = await parseJsonBody(req); } catch { sendJson(req, res, 400, { error: 'Cuerpo inválido.' }); return; }
+
+  const { issueKey, field, value } = body;
+  if (!issueKey || !field) { sendJson(req, res, 400, { error: 'Faltan issueKey o field.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  const fieldKey = field === 'startdate' ? JIRA_START_DATE_FIELD : field;
+  await jiraApiRequest(
+    token.jiraEmail, token.apiToken,
+    `/api/3/issue/${encodeURIComponent(issueKey)}`,
+    { fields: { [fieldKey]: value || null } },
+    'PUT'
+  );
+  sendJson(req, res, 200, { ok: true });
 }
 
 async function requestHandler(req, res) {
@@ -2245,6 +2273,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/jira/issue') {
       await handleJiraGetIssue(req, res, url);
+      return;
+    }
+
+    if (req.method === 'PUT' && url.pathname === '/api/jira/issue') {
+      await handleJiraUpdateIssue(req, res);
       return;
     }
 

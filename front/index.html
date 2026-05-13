@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260513-5" />
+  <link rel="stylesheet" href="styles.css?v=20260513-8" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -371,7 +371,21 @@
         <div class="jira-modal-header-info">
           <span id="jiraModalKey" class="jira-modal-key"></span>
           <h2 id="jiraModalTitle" class="jira-modal-title"></h2>
-          <div id="jiraModalMeta" class="jira-modal-meta"></div>
+          <div class="jira-modal-meta-row">
+            <div id="jiraModalMeta" class="jira-modal-meta"></div>
+            <div class="jira-modal-dates-header">
+              <div class="jira-modal-date-field">
+                <label class="jira-modal-date-label">Inicio</label>
+                <input type="date" id="jiraModalStartDate" class="jira-modal-date-input">
+                <span id="jiraModalStartDateStatus" class="jira-date-save-status"></span>
+              </div>
+              <div class="jira-modal-date-field">
+                <label class="jira-modal-date-label">Vencimiento</label>
+                <input type="date" id="jiraModalDueDate" class="jira-modal-date-input">
+                <span id="jiraModalDueDateStatus" class="jira-date-save-status"></span>
+              </div>
+            </div>
+          </div>
         </div>
         <button id="jiraModalClose" class="jira-modal-close" title="Cerrar">✕</button>
       </div>
@@ -397,6 +411,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260513-6"></script>
+  <script src="app.js?v=20260513-8"></script>
 </body>
 </html>

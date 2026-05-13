@@ -1740,3 +1740,23 @@ td.cell-icon {
 .jira-card-link { cursor: pointer; }
 .jira-card-key.jira-card-link:hover { text-decoration: underline; }
 .jira-card-summary.jira-card-link:hover { color: #2563eb; }
+
+/* ===== JIRA MODAL DATE FIELDS ===== */
+.jira-modal-meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.375rem; }
+.jira-modal-meta { display: contents; }
+.jira-modal-dates-header { display: contents; }
+.jira-modal-date-field { display: flex; align-items: center; gap: 0.3rem; }
+.jira-modal-date-label {
+  font-size: 0.6rem; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+}
+.jira-modal-date-input {
+  font-size: 0.7rem; padding: 0.175rem 0.4rem;
+  border: 1px solid #e2e8f0; border-radius: 999px;
+  color: #475569; background: #f8fafc; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+.jira-modal-date-input:hover { border-color: #94a3b8; background: white; }
+.jira-modal-date-input:focus { outline: none; border-color: #2563eb; background: white; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
+.jira-date-save-status { font-size: 0.65rem; }
