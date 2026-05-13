@@ -1532,7 +1532,8 @@ async function handleValidateCorreo(req, res) {
 
     // Fetch CRONOGRAMA columns E through N (E=esquema, H=periodicidad, L=fechaPago, N=asunto)
     const cronoResponse = await googleSheetsRequest(
-      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!E:N')}`
+      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!E:N')}`,
+      { valueRenderOption: 'UNFORMATTED_VALUE' }
     );
     const rows = cronoResponse.values || [];
     const dataRows = [];
