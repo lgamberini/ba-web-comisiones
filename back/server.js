@@ -141,7 +141,8 @@ const SECTION_DICTIONARY = {
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
-  'doc-l': 'generador-correos'
+  'doc-l': 'generador-correos',
+  'doc-m': 'jira'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
@@ -151,7 +152,7 @@ const ROLE_DEFINITIONS = {
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -167,6 +168,8 @@ const APPS_SCRIPT_AUTH_MODE = ['none', 'service', 'user'].includes(String(proces
   : 'none';
 const USER_CONFIG = buildUserConfig();
 const GOOGLE_LOGIN_CLIENT_ID = String(process.env.GOOGLE_LOGIN_CLIENT_ID || '').trim();
+const JIRA_SITE = process.env.JIRA_SITE || 'prestamype.atlassian.net';
+const JIRA_TOKENS_SHEET = 'PRIVATE';
 
 // Carga variables de entorno desde archivo .env
 // Soporta valores con comillas y saltos de línea
@@ -493,6 +496,27 @@ async function googleSheetsBatchUpdate(spreadsheetId, body) {
     throw new Error(data.error?.message || 'Error al escribir en Google Sheets.');
   }
 
+  return data;
+}
+
+async function googleSheetsAppend(spreadsheetId, range, values) {
+  const accessToken = await getGoogleAccessToken();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values })
+    });
+  } catch (error) {
+    const cause = error.cause?.message ? ` Detalle: ${error.cause.message}` : '';
+    throw new Error(`No se pudo conectar con Google Sheets.${cause}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Error al agregar fila en Google Sheets.');
   return data;
 }
 
@@ -1704,6 +1728,372 @@ async function handleRunScript(req, res) {
   sendJson(req, res, 200, { ok: true });
 }
 
+// ── Jira helpers ──────────────────────────────────────────────────────────────
+
+async function jiraApiRequest(jiraEmail, apiToken, path, params = {}, method = 'GET') {
+  const credentials = Buffer.from(`${jiraEmail}:${apiToken}`).toString('base64');
+  const headers = { Authorization: `Basic ${credentials}`, Accept: 'application/json' };
+
+  let url, fetchOptions;
+  if (method === 'POST') {
+    url = `https://${JIRA_SITE}/rest${path}`;
+    headers['Content-Type'] = 'application/json';
+    fetchOptions = { method: 'POST', headers, body: JSON.stringify(params) };
+  } else {
+    const urlObj = new URL(`https://${JIRA_SITE}/rest${path}`);
+    Object.entries(params).forEach(([k, v]) => v != null && urlObj.searchParams.set(k, String(v)));
+    url = urlObj.toString();
+    fetchOptions = { headers };
+  }
+
+  let response;
+  try {
+    response = await fetch(url, fetchOptions);
+  } catch (error) {
+    throw new Error(`No se pudo conectar con Jira: ${error.message}`);
+  }
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const msg = data.message || (data.errorMessages || []).join(', ') || 'Error en Jira API';
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function getJiraToken(username) {
+  try {
+    const response = await googleSheetsRequest(
+      `spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}/values/${encodeURIComponent(`${JIRA_TOKENS_SHEET}!A:C`)}`
+    );
+    const rows = response.values || [];
+    const row = rows.find(r => String(r[0] || '').trim() === username);
+    if (!row || !row[1] || !row[2]) return null;
+    return { jiraEmail: String(row[1]).trim(), apiToken: String(row[2]).trim() };
+  } catch {
+    return null;
+  }
+}
+
+async function saveJiraToken(username, jiraEmail, apiToken) {
+  const response = await googleSheetsRequest(
+    `spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}/values/${encodeURIComponent(`${JIRA_TOKENS_SHEET}!A:A`)}`
+  );
+  const rows = response.values || [];
+  const rowIdx = rows.findIndex(r => String(r[0] || '').trim() === username);
+  const now = new Date().toISOString();
+
+  if (rowIdx >= 0) {
+    const targetRow = rowIdx + 1;
+    await googleSheetsBatchUpdate(GESTION_COMISIONES_SPREADSHEET_ID, {
+      valueInputOption: 'RAW',
+      data: [{ range: `${JIRA_TOKENS_SHEET}!A${targetRow}:D${targetRow}`, values: [[username, jiraEmail, apiToken, now]] }]
+    });
+  } else {
+    await googleSheetsAppend(
+      GESTION_COMISIONES_SPREADSHEET_ID,
+      `${JIRA_TOKENS_SHEET}!A:D`,
+      [[username, jiraEmail, apiToken, now]]
+    );
+  }
+}
+
+// ── Jira handlers ─────────────────────────────────────────────────────────────
+
+async function handleJiraTokenGet(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  const token = await getJiraToken(auth.user.username);
+  if (!token) {
+    sendJson(req, res, 200, { hasToken: false });
+    return;
+  }
+  const parts = token.jiraEmail.split('@');
+  const maskedEmail = parts[0].slice(0, 3) + '***@' + (parts[1] || '');
+  sendJson(req, res, 200, { hasToken: true, jiraEmail: maskedEmail });
+}
+
+async function handleJiraTokenSave(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+
+  let body;
+  try { body = await parseJsonBody(req); } catch {
+    sendJson(req, res, 400, { error: 'Cuerpo inválido.' }); return;
+  }
+
+  const jiraEmail = String(body.jiraEmail || '').trim().toLowerCase();
+  const apiToken = String(body.apiToken || '').trim();
+  if (!jiraEmail || !apiToken) {
+    sendJson(req, res, 400, { error: 'Faltan jiraEmail o apiToken.' }); return;
+  }
+
+  try {
+    await jiraApiRequest(jiraEmail, apiToken, '/agile/1.0/board', { maxResults: 1 });
+  } catch (err) {
+    sendJson(req, res, 400, { error: `Token inválido o sin acceso a Jira: ${err.message}` }); return;
+  }
+
+  await saveJiraToken(auth.user.username, jiraEmail, apiToken);
+  sendJson(req, res, 200, { ok: true });
+}
+
+async function handleJiraBoards(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' }); return;
+  }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'No hay token de Jira guardado.' }); return; }
+
+  const data = await jiraApiRequest(token.jiraEmail, token.apiToken, '/api/3/project/search', { maxResults: 50 });
+  const boards = (data.values || []).map(p => ({
+    id: p.key,
+    name: p.name,
+    type: p.projectTypeKey,
+    projectKey: p.key
+  }));
+  sendJson(req, res, 200, { boards });
+}
+
+async function handleJiraBoardIssues(req, res, url) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' }); return;
+  }
+
+  const projectKey = url.searchParams.get('boardId');
+  if (!projectKey) { sendJson(req, res, 400, { error: 'Falta boardId.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'No hay token de Jira guardado.' }); return; }
+
+  const issuesData = await jiraApiRequest(
+    token.jiraEmail, token.apiToken,
+    '/api/3/search/jql',
+    {
+      jql: `project="${projectKey}" AND assignee="${token.jiraEmail}" ORDER BY created DESC`,
+      fields: ['summary', 'status', 'assignee', 'priority', 'issuetype'],
+      maxResults: 100
+    },
+    'POST'
+  );
+
+  const issues = (issuesData.issues || []).map(i => ({
+    key: i.key,
+    summary: i.fields?.summary || '',
+    status: i.fields?.status?.name || 'Sin estado',
+    assignee: i.fields?.assignee?.displayName || null,
+    priority: i.fields?.priority?.name || null,
+    type: i.fields?.issuetype?.name || null
+  }));
+
+  sendJson(req, res, 200, { sprintName: projectKey, issues });
+}
+
+async function handleJiraTransitions(req, res, url) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  const issueKey = url.searchParams.get('issueKey');
+  if (!issueKey) { sendJson(req, res, 400, { error: 'Falta issueKey.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  const data = await jiraApiRequest(token.jiraEmail, token.apiToken, `/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
+  sendJson(req, res, 200, { transitions: (data.transitions || []).map(t => ({ id: t.id, name: t.name })) });
+}
+
+async function handleJiraApplyTransition(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  let body;
+  try { body = await parseJsonBody(req); } catch { sendJson(req, res, 400, { error: 'Cuerpo inválido.' }); return; }
+
+  const { issueKey, transitionId } = body;
+  if (!issueKey || !transitionId) { sendJson(req, res, 400, { error: 'Faltan issueKey o transitionId.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  await jiraApiRequest(token.jiraEmail, token.apiToken, `/api/3/issue/${encodeURIComponent(issueKey)}/transitions`, { transition: { id: transitionId } }, 'POST');
+  sendJson(req, res, 200, { ok: true });
+}
+
+async function handleJiraAddComment(req, res) {
+  if (!validateOrigin(req, res)) return;
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  let body;
+  try { body = await parseJsonBody(req); } catch { sendJson(req, res, 400, { error: 'Cuerpo inválido.' }); return; }
+
+  const { issueKey, comment } = body;
+  if (!issueKey || !String(comment || '').trim()) {
+    sendJson(req, res, 400, { error: 'Faltan issueKey o comment.' }); return;
+  }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  await jiraApiRequest(
+    token.jiraEmail, token.apiToken,
+    `/api/3/issue/${encodeURIComponent(issueKey)}/comment`,
+    {
+      body: {
+        type: 'doc', version: 1,
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: String(comment).trim() }] }]
+      }
+    },
+    'POST'
+  );
+  sendJson(req, res, 200, { ok: true });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function adfToHtml(node) {
+  if (!node) return '';
+  if (node.type === 'text') {
+    let text = escapeHtml(node.text || '');
+    if (node.marks) {
+      for (const mark of node.marks) {
+        if (mark.type === 'strong') text = `<strong>${text}</strong>`;
+        else if (mark.type === 'em') text = `<em>${text}</em>`;
+        else if (mark.type === 'code') text = `<code>${text}</code>`;
+        else if (mark.type === 'underline') text = `<u>${text}</u>`;
+        else if (mark.type === 'strike') text = `<s>${text}</s>`;
+        else if (mark.type === 'link') {
+          const href = escapeHtml(mark.attrs?.href || '#');
+          text = `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+        }
+      }
+    }
+    return text;
+  }
+  if (node.type === 'hardBreak') return '<br>';
+  if (node.type === 'mention') return `<strong>${escapeHtml(node.attrs?.text || node.attrs?.id || '')}</strong>`;
+  if (node.type === 'emoji') return escapeHtml(node.attrs?.text || node.attrs?.shortName || '');
+  if (node.type === 'inlineCard' || node.type === 'blockCard') {
+    const url = escapeHtml(node.attrs?.url || '');
+    return url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` : '';
+  }
+  if (node.type === 'media' || node.type === 'mediaSingle' || node.type === 'mediaGroup') return '';
+  const inner = (node.content || []).map(adfToHtml).join('');
+  switch (node.type) {
+    case 'doc': return inner;
+    case 'paragraph': return `<p>${inner}</p>`;
+    case 'heading': { const l = Math.min(Math.max(node.attrs?.level || 3, 1), 6); return `<h${l}>${inner}</h${l}>`; }
+    case 'bulletList': return `<ul>${inner}</ul>`;
+    case 'orderedList': return `<ol>${inner}</ol>`;
+    case 'listItem': return `<li>${inner}</li>`;
+    case 'blockquote': return `<blockquote>${inner}</blockquote>`;
+    case 'codeBlock': return `<pre><code>${inner}</code></pre>`;
+    case 'rule': return '<hr>';
+    case 'table': return `<table>${inner}</table>`;
+    case 'tableRow': return `<tr>${inner}</tr>`;
+    case 'tableHeader': return `<th>${inner}</th>`;
+    case 'tableCell': return `<td>${inner}</td>`;
+    default: return inner;
+  }
+}
+
+function extractAdfText(node) {
+  if (!node) return '';
+  if (node.type === 'text') return node.text || '';
+  if (node.content && Array.isArray(node.content)) {
+    const parts = node.content.map(extractAdfText);
+    const sep = (node.type === 'paragraph' || node.type === 'heading') ? '\n' : '';
+    return parts.join('') + sep;
+  }
+  return '';
+}
+
+async function handleJiraGetComments(req, res, url) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  const issueKey = url.searchParams.get('issueKey');
+  if (!issueKey) { sendJson(req, res, 400, { error: 'Falta issueKey.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  const data = await jiraApiRequest(
+    token.jiraEmail, token.apiToken,
+    `/api/3/issue/${encodeURIComponent(issueKey)}/comment`,
+    { maxResults: 50, orderBy: 'created' }
+  );
+
+  const comments = (data.comments || []).map(c => ({
+    id: c.id,
+    author: c.author?.displayName || 'Desconocido',
+    created: c.created,
+    body: extractAdfText(c.body).trim()
+  }));
+
+  sendJson(req, res, 200, { comments });
+}
+
+async function handleJiraGetIssue(req, res, url) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-m')) { sendJson(req, res, 403, { error: 'Sin permisos.' }); return; }
+
+  const issueKey = url.searchParams.get('issueKey');
+  if (!issueKey) { sendJson(req, res, 400, { error: 'Falta issueKey.' }); return; }
+
+  const token = await getJiraToken(auth.user.username);
+  if (!token) { sendJson(req, res, 404, { error: 'Sin token de Jira.' }); return; }
+
+  const data = await jiraApiRequest(
+    token.jiraEmail, token.apiToken,
+    `/api/3/issue/${encodeURIComponent(issueKey)}`,
+    { fields: 'summary,description,status,assignee,priority,comment,duedate' }
+  );
+
+  const fields = data.fields || {};
+  const comments = (fields.comment?.comments || []).map(c => ({
+    id: c.id,
+    author: c.author?.displayName || 'Desconocido',
+    created: c.created,
+    bodyHtml: adfToHtml(c.body)
+  }));
+
+  sendJson(req, res, 200, {
+    key: data.key,
+    summary: fields.summary || '',
+    descriptionHtml: adfToHtml(fields.description),
+    status: fields.status?.name || '',
+    assignee: fields.assignee?.displayName || null,
+    priority: fields.priority?.name || null,
+    duedate: fields.duedate || null,
+    comments
+  });
+}
+
 async function requestHandler(req, res) {
   // Forzado de HTTPS en producción
   if (IS_PRODUCTION && req.headers['x-forwarded-proto'] === 'http') {
@@ -1810,6 +2200,51 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/run-script') {
       await handleRunScript(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/token') {
+      await handleJiraTokenGet(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/jira/token') {
+      await handleJiraTokenSave(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/boards') {
+      await handleJiraBoards(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/board-issues') {
+      await handleJiraBoardIssues(req, res, url);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/transitions') {
+      await handleJiraTransitions(req, res, url);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/jira/transition') {
+      await handleJiraApplyTransition(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/jira/comment') {
+      await handleJiraAddComment(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/comments') {
+      await handleJiraGetComments(req, res, url);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/jira/issue') {
+      await handleJiraGetIssue(req, res, url);
       return;
     }
 

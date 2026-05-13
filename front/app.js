@@ -67,7 +67,8 @@ const sectionDictionary = {
   'doc-i': 'links-interes',
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
-  'doc-l': 'generador-correos'
+  'doc-l': 'generador-correos',
+  'doc-m': 'jira'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -165,9 +166,35 @@ const elements = {
   correoButtons: document.getElementById("correoButtons"),
   correoLimpiarBtn: document.getElementById("correoLimpiarBtn"),
   correoEjecutarBtn: document.getElementById("correoEjecutarBtn"),
+  jiraTokenForm: document.getElementById("jiraTokenForm"),
+  jiraEmailInput: document.getElementById("jiraEmailInput"),
+  jiraTokenInput: document.getElementById("jiraTokenInput"),
+  jiraGuardarBtn: document.getElementById("jiraGuardarBtn"),
+  jiraTokenStatus: document.getElementById("jiraTokenStatus"),
+  jiraBoardView: document.getElementById("jiraBoardView"),
+  jiraConectadoComo: document.getElementById("jiraConectadoComo"),
+  jiraBoardSelect: document.getElementById("jiraBoardSelect"),
+  jiraRefreshBtn: document.getElementById("jiraRefreshBtn"),
+  jiraCambiarTokenBtn: document.getElementById("jiraCambiarTokenBtn"),
+  jiraStatus: document.getElementById("jiraStatus"),
+  jiraBoardWrapper: document.getElementById("jiraBoardWrapper"),
+  jiraIssueModal: document.getElementById("jiraIssueModal"),
+  jiraModalClose: document.getElementById("jiraModalClose"),
+  jiraModalKey: document.getElementById("jiraModalKey"),
+  jiraModalTitle: document.getElementById("jiraModalTitle"),
+  jiraModalMeta: document.getElementById("jiraModalMeta"),
+  jiraModalDescription: document.getElementById("jiraModalDescription"),
+  jiraModalDescSection: document.getElementById("jiraModalDescSection"),
+  jiraModalCommentsList: document.getElementById("jiraModalCommentsList"),
+  jiraModalCommentCount: document.getElementById("jiraModalCommentCount"),
+  jiraModalCommentInput: document.getElementById("jiraModalCommentInput"),
+  jiraModalCommentSubmit: document.getElementById("jiraModalCommentSubmit"),
+  jiraModalCommentStatus: document.getElementById("jiraModalCommentStatus"),
 };
 
 // Estado actual de la aplicación
+let jiraCurrentBoardId = null;
+let jiraCurrentModalIssueKey = null;
 let currentProduct = null;         // Producto seleccionado en Visualizado
 let currentSheet = null;          // Hoja seleccionada
 let currentSeguimientoSheet = null; // Hoja seleccionada en Seguimiento
@@ -632,7 +659,8 @@ function showAppForUser(user) {
   currentUser = user;
   document.body.classList.remove('logged-out');
   document.body.classList.add('logged-in');
-  const displayRole = user.role === 'usuario_gerencia' ? 'gerencia' : user.role;
+  const roleLabels = { usuario_gerencia: 'gerencia', administrador_editor: 'qlid' };
+  const displayRole = roleLabels[user.role] ?? user.role;
   elements.sessionUser.textContent = '';
   elements.sessionRole.textContent = `Rol: ${displayRole}`;
   elements.loginView.classList.add('hidden');
@@ -4139,6 +4167,349 @@ function changeSection(sectionId) {
   if (sectionId === 'generador-correos') {
     loadCorreoEsquemas();
   }
+  if (sectionId === 'jira') {
+    loadJiraSection();
+  }
+}
+
+// ── Jira ──────────────────────────────────────────────────────────────────────
+
+async function loadJiraSection() {
+  elements.jiraTokenForm.classList.add('hidden');
+  elements.jiraBoardView.classList.add('hidden');
+  elements.jiraTokenStatus.textContent = '';
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/token`);
+    const data = await res.json();
+    if (data.hasToken) {
+      elements.jiraConectadoComo.textContent = `Conectado: ${data.jiraEmail}`;
+      elements.jiraBoardView.classList.remove('hidden');
+      await loadJiraBoards();
+    } else {
+      elements.jiraTokenForm.classList.remove('hidden');
+    }
+  } catch {
+    elements.jiraTokenForm.classList.remove('hidden');
+  }
+}
+
+async function saveJiraToken() {
+  const email = elements.jiraEmailInput.value.trim();
+  const token = elements.jiraTokenInput.value.trim();
+  if (!email || !token) {
+    elements.jiraTokenStatus.textContent = 'Completa el correo y el token.';
+    elements.jiraTokenStatus.style.color = '#ef4444';
+    return;
+  }
+  elements.jiraGuardarBtn.disabled = true;
+  elements.jiraTokenStatus.textContent = 'Validando y guardando...';
+  elements.jiraTokenStatus.style.color = '#64748b';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jiraEmail: email, apiToken: token })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al guardar.');
+    elements.jiraTokenInput.value = '';
+    loadJiraSection();
+  } catch (err) {
+    elements.jiraTokenStatus.textContent = err.message;
+    elements.jiraTokenStatus.style.color = '#ef4444';
+    elements.jiraGuardarBtn.disabled = false;
+  }
+}
+
+async function loadJiraBoards() {
+  jiraCurrentBoardId = 'BA';
+  loadBoardIssues('BA');
+}
+
+async function loadBoardIssues(boardId) {
+  if (!boardId) return;
+  jiraCurrentBoardId = boardId;
+  elements.jiraStatus.textContent = 'Cargando issues...';
+  elements.jiraStatus.style.color = '#64748b';
+  elements.jiraBoardWrapper.innerHTML = '';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/board-issues?boardId=${encodeURIComponent(boardId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al cargar issues.');
+    renderJiraIssues(data);
+  } catch (err) {
+    elements.jiraStatus.textContent = err.message;
+    elements.jiraStatus.style.color = '#ef4444';
+  }
+}
+
+const JIRA_STATUS_ORDER = [
+  'por priorizar',
+  'priorización sprint',
+  'en curso',
+  'standby ba',
+  'a la espera de otra área',
+  'resuelto sprint'
+];
+
+function getCurrentWeekRange() {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now); mon.setDate(now.getDate() + diffToMon);
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+  const fmt = (d) => d.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' });
+  return `${fmt(mon)} al ${fmt(fri)}`;
+}
+
+function formatJiraDate(isoStr) {
+  if (!isoStr) return '';
+  return new Date(isoStr).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function normalizeStatus(s) {
+  return String(s || '').toLowerCase().trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function renderJiraIssues(data) {
+  elements.jiraBoardWrapper.innerHTML = '';
+  if (!data.sprintName) {
+    elements.jiraStatus.textContent = 'Sin issues encontrados.';
+    elements.jiraStatus.style.color = '#64748b';
+    return;
+  }
+  const issues = data.issues || [];
+  if (!issues.length) {
+    elements.jiraStatus.textContent = `Proyecto ${data.sprintName} — sin issues asignados.`;
+    elements.jiraStatus.style.color = '#64748b';
+    return;
+  }
+  elements.jiraStatus.textContent = `Proyecto ${data.sprintName} — Semana ${getCurrentWeekRange()}`;
+  elements.jiraStatus.style.color = '#334155';
+
+  const byStatus = {};
+  issues.forEach(issue => {
+    const s = issue.status || 'Sin estado';
+    const key = normalizeStatus(s);
+    if (!byStatus[key]) byStatus[key] = { display: s, issues: [] };
+    byStatus[key].issues.push(issue);
+  });
+
+  const board = document.createElement('div');
+  board.className = 'jira-columns';
+
+  JIRA_STATUS_ORDER.forEach(statusKey => {
+    const normKey = normalizeStatus(statusKey);
+    const match = Object.keys(byStatus).find(k => normalizeStatus(k) === normKey);
+    const group = match ? byStatus[match] : null;
+
+    const col = document.createElement('div');
+    col.className = 'jira-column';
+    const header = document.createElement('div');
+    header.className = 'jira-column-header';
+    const displayName = group ? group.display : statusKey.replace(/\b\w/g, c => c.toUpperCase());
+    header.textContent = `${displayName} (${group ? group.issues.length : 0})`;
+    col.appendChild(header);
+
+    (group ? group.issues : []).forEach(issue => {
+      const card = document.createElement('div');
+      card.className = 'jira-card';
+      card.innerHTML = `
+        <div class="jira-card-key jira-card-link">${issue.key}</div>
+        <div class="jira-card-summary jira-card-link">${issue.summary}</div>
+        ${issue.assignee ? `<div class="jira-card-assignee">${issue.assignee}</div>` : ''}
+        <div class="jira-card-footer">
+          ${issue.priority ? `<span class="jira-card-priority">${issue.priority}</span>` : '<span></span>'}
+          <div class="jira-card-actions">
+            <button class="jira-move-btn" data-key="${issue.key}">Mover ▾</button>
+            <button class="jira-comment-btn" data-key="${issue.key}" title="Ver detalle y comentarios">💬</button>
+          </div>
+        </div>
+      `;
+      card.querySelector('.jira-card-key').addEventListener('click', () => openIssueModal(issue.key));
+      card.querySelector('.jira-card-summary').addEventListener('click', () => openIssueModal(issue.key));
+      card.querySelector('.jira-move-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTransitionMenu(e.currentTarget, issue.key);
+      });
+      card.querySelector('.jira-comment-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openIssueModal(issue.key);
+      });
+      col.appendChild(card);
+    });
+    board.appendChild(col);
+  });
+  elements.jiraBoardWrapper.appendChild(board);
+}
+
+function renderModalComments(comments) {
+  elements.jiraModalCommentCount.textContent = comments.length;
+  if (!comments.length) {
+    elements.jiraModalCommentsList.innerHTML = '<div class="jira-modal-no-comments">Sin comentarios aún.</div>';
+    return;
+  }
+  elements.jiraModalCommentsList.innerHTML = comments.map(c => `
+    <div class="jira-modal-comment-item">
+      <div class="jira-modal-comment-meta"><strong>${c.author}</strong> · ${formatJiraDate(c.created)}</div>
+      <div class="jira-modal-comment-body">${c.bodyHtml || ''}</div>
+    </div>
+  `).join('');
+}
+
+async function openIssueModal(issueKey) {
+  jiraCurrentModalIssueKey = issueKey;
+  elements.jiraModalKey.textContent = issueKey;
+  elements.jiraModalTitle.textContent = 'Cargando...';
+  elements.jiraModalMeta.innerHTML = '';
+  elements.jiraModalDescription.innerHTML = '';
+  elements.jiraModalCommentsList.innerHTML = '';
+  elements.jiraModalCommentCount.textContent = '0';
+  elements.jiraModalCommentInput.value = '';
+  elements.jiraModalCommentStatus.textContent = '';
+  elements.jiraIssueModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/issue?issueKey=${encodeURIComponent(issueKey)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al cargar ticket.');
+
+    elements.jiraModalKey.textContent = data.key;
+    elements.jiraModalTitle.textContent = data.summary;
+    const badges = [data.status, data.priority, data.assignee, data.duedate ? `Vence: ${data.duedate}` : null]
+      .filter(Boolean)
+      .map(b => `<span class="jira-modal-meta-badge">${b}</span>`)
+      .join('');
+    elements.jiraModalMeta.innerHTML = badges;
+
+    if (data.descriptionHtml && data.descriptionHtml.trim()) {
+      elements.jiraModalDescription.innerHTML = data.descriptionHtml;
+      elements.jiraModalDescSection.classList.remove('hidden');
+    } else {
+      elements.jiraModalDescription.innerHTML = '<span class="jira-modal-desc-empty">Sin descripción.</span>';
+    }
+    renderModalComments(data.comments);
+  } catch (err) {
+    elements.jiraModalTitle.textContent = err.message;
+  }
+}
+
+function closeIssueModal() {
+  elements.jiraIssueModal.classList.add('hidden');
+  document.body.style.overflow = '';
+  jiraCurrentModalIssueKey = null;
+}
+
+async function submitModalComment() {
+  if (!jiraCurrentModalIssueKey) return;
+  const comment = elements.jiraModalCommentInput.value.trim();
+  if (!comment) return;
+
+  elements.jiraModalCommentSubmit.disabled = true;
+  elements.jiraModalCommentStatus.textContent = 'Enviando...';
+  elements.jiraModalCommentStatus.style.color = '#64748b';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/comment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issueKey: jiraCurrentModalIssueKey, comment })
+    });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Error'); }
+    elements.jiraModalCommentInput.value = '';
+    elements.jiraModalCommentStatus.textContent = 'Comentario enviado.';
+    elements.jiraModalCommentStatus.style.color = '#16a34a';
+    setTimeout(() => { elements.jiraModalCommentStatus.textContent = ''; }, 2000);
+    elements.jiraModalCommentsList.innerHTML = '<div class="jira-modal-no-comments">Actualizando...</div>';
+    const r2 = await authFetch(`${API_BASE_URL}/api/jira/issue?issueKey=${encodeURIComponent(jiraCurrentModalIssueKey)}`);
+    const d2 = await r2.json();
+    if (r2.ok) renderModalComments(d2.comments);
+  } catch (err) {
+    elements.jiraModalCommentStatus.textContent = err.message;
+    elements.jiraModalCommentStatus.style.color = '#ef4444';
+  } finally {
+    elements.jiraModalCommentSubmit.disabled = false;
+  }
+}
+
+async function openTransitionMenu(btn, issueKey) {
+  const card = btn.closest('.jira-card');
+  const existingPanel = card.querySelector('.jira-transition-panel');
+  if (existingPanel) { existingPanel.remove(); btn.style.display = ''; return; }
+
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/jira/transitions?issueKey=${encodeURIComponent(issueKey)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error');
+
+    const panel = document.createElement('div');
+    panel.className = 'jira-transition-panel';
+
+    const select = document.createElement('select');
+    select.className = 'jira-transition-select';
+    select.innerHTML = '<option value="">-- Mover a --</option>';
+    (data.transitions || []).forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      select.appendChild(opt);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'jira-transition-actions';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'jira-transition-confirm';
+    confirmBtn.textContent = 'Mover';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'jira-transition-cancel';
+    cancelBtn.textContent = 'Cancelar';
+
+    actions.appendChild(confirmBtn);
+    actions.appendChild(cancelBtn);
+    panel.appendChild(select);
+    panel.appendChild(actions);
+
+    const closePanel = () => { panel.remove(); btn.style.display = ''; btn.textContent = 'Mover ▾'; btn.disabled = false; };
+
+    cancelBtn.addEventListener('click', closePanel);
+
+    confirmBtn.addEventListener('click', async () => {
+      const transitionId = select.value;
+      if (!transitionId) return;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '...';
+      try {
+        const r = await authFetch(`${API_BASE_URL}/api/jira/transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ issueKey, transitionId })
+        });
+        if (!r.ok) { const d = await r.json(); throw new Error(d.error || 'Error'); }
+        loadBoardIssues(jiraCurrentBoardId);
+      } catch (err) {
+        elements.jiraStatus.textContent = `Error al mover ${issueKey}: ${err.message}`;
+        elements.jiraStatus.style.color = '#ef4444';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Mover';
+      }
+    });
+
+    btn.style.display = 'none';
+    card.appendChild(panel);
+    btn.textContent = 'Mover ▾';
+    btn.disabled = false;
+  } catch (err) {
+    btn.textContent = 'Mover ▾';
+    btn.disabled = false;
+    elements.jiraStatus.textContent = `Error: ${err.message}`;
+    elements.jiraStatus.style.color = '#ef4444';
+  }
 }
 
 function init() {
@@ -4199,6 +4570,22 @@ function init() {
   elements.correoValidarBtn.addEventListener("click", validarCorreo);
   elements.correoLimpiarBtn.addEventListener("click", limpiarCorreo);
   elements.correoEjecutarBtn.addEventListener("click", ejecutarCorreo);
+  elements.jiraGuardarBtn.addEventListener("click", saveJiraToken);
+  elements.jiraRefreshBtn.addEventListener("click", () => loadBoardIssues(jiraCurrentBoardId));
+  elements.jiraBoardSelect.addEventListener("change", (e) => loadBoardIssues(e.target.value));
+  elements.jiraModalClose.addEventListener("click", closeIssueModal);
+  elements.jiraIssueModal.addEventListener("click", (e) => { if (e.target === elements.jiraIssueModal) closeIssueModal(); });
+  elements.jiraModalCommentSubmit.addEventListener("click", submitModalComment);
+  elements.jiraModalCommentInput.addEventListener("keydown", (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitModalComment(); });
+  document.addEventListener("keydown", (e) => { if (e.key === 'Escape') closeIssueModal(); });
+  elements.jiraCambiarTokenBtn.addEventListener("click", () => {
+    elements.jiraBoardView.classList.add('hidden');
+    elements.jiraTokenForm.classList.remove('hidden');
+    elements.jiraEmailInput.value = '';
+    elements.jiraTokenInput.value = '';
+    elements.jiraTokenStatus.textContent = '';
+    elements.jiraGuardarBtn.disabled = false;
+  });
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 
   // Agregar navegación por secciones

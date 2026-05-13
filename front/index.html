@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260502-2" />
+  <link rel="stylesheet" href="styles.css?v=20260513-5" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -117,6 +117,10 @@
         <button class="nav-item" data-section="organigrama-ba">
           <span class="nav-icon">🏢</span>
           <span class="nav-label">Organigrama BA</span>
+        </button>
+        <button class="nav-item" data-section="jira">
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">Mi Jira</span>
         </button>
       </nav>
       <button id="sidebarToggleBtn" class="sidebar-toggle" type="button" aria-label="Minimizar menu lateral" aria-expanded="true">
@@ -311,6 +315,40 @@
         </section>
       </section>
 
+      <!-- Sección: Jira (doc-m) - Visualización del tablero personal de Jira -->
+      <section id="jira-section" class="section">
+        <div id="jiraTokenForm" class="jira-token-form">
+          <h2 class="jira-form-title">Conectar tu cuenta de Jira</h2>
+          <p class="jira-help-text">
+            Ingresa tu correo de Atlassian y un
+            <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer">API Token</a>
+            para visualizar tu tablero.
+          </p>
+          <div class="jira-form-fields">
+            <label for="jiraEmailInput">Correo Atlassian</label>
+            <input id="jiraEmailInput" type="email" placeholder="tu@prestamype.com" autocomplete="off" />
+            <label for="jiraTokenInput">API Token</label>
+            <input id="jiraTokenInput" type="password" placeholder="Token generado en Atlassian" autocomplete="off" />
+          </div>
+          <div class="jira-form-actions">
+            <button id="jiraGuardarBtn" type="button">Guardar token</button>
+          </div>
+          <div id="jiraTokenStatus" class="status"></div>
+        </div>
+        <div id="jiraBoardView" class="jira-board-view hidden">
+          <section class="controls">
+            <span id="jiraConectadoComo" class="jira-conectado-label"></span>
+            <select id="jiraBoardSelect" style="display:none"></select>
+            <button id="jiraRefreshBtn" type="button">Actualizar</button>
+            <button id="jiraCambiarTokenBtn" type="button">Cambiar token</button>
+          </section>
+          <section class="data-area">
+            <div id="jiraStatus" class="status">Selecciona un tablero.</div>
+            <div id="jiraBoardWrapper" class="jira-board-wrapper"></div>
+          </section>
+        </div>
+      </section>
+
       <!-- Sección: Avance Comisiones (doc-a) - Resumen de cronograma de comisiones -->
       <section id="avance-comisiones-section" class="section">
         <section class="controls">
@@ -326,8 +364,39 @@
     </main>
   </div>
 
-  <script src="config.js?v=20260502-2"></script>
+  <!-- Modal detalle de ticket Jira -->
+  <div id="jiraIssueModal" class="jira-modal-overlay hidden">
+    <div class="jira-modal" role="dialog" aria-modal="true">
+      <div class="jira-modal-header">
+        <div class="jira-modal-header-info">
+          <span id="jiraModalKey" class="jira-modal-key"></span>
+          <h2 id="jiraModalTitle" class="jira-modal-title"></h2>
+          <div id="jiraModalMeta" class="jira-modal-meta"></div>
+        </div>
+        <button id="jiraModalClose" class="jira-modal-close" title="Cerrar">✕</button>
+      </div>
+      <div class="jira-modal-body">
+        <div id="jiraModalDescSection" class="jira-modal-section">
+          <div class="jira-modal-section-title">Descripción</div>
+          <div id="jiraModalDescription" class="jira-modal-description"></div>
+        </div>
+        <div class="jira-modal-section">
+          <div class="jira-modal-section-title">Comentarios (<span id="jiraModalCommentCount">0</span>)</div>
+          <div id="jiraModalCommentsList" class="jira-modal-comments-list"></div>
+          <div class="jira-modal-comment-new">
+            <textarea id="jiraModalCommentInput" class="jira-comment-input" placeholder="Agregar comentario..." rows="3"></textarea>
+            <div class="jira-comment-actions" style="margin-top:0.5rem">
+              <button id="jiraModalCommentSubmit" class="jira-comment-submit">Enviar</button>
+            </div>
+            <div id="jiraModalCommentStatus" class="jira-comment-status"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260502-2"></script>
+  <script src="app.js?v=20260513-6"></script>
 </body>
 </html>
