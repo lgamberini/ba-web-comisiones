@@ -459,6 +459,7 @@ function filterCorreoEsquemas() {
 }
 
 async function validarCorreo() {
+  const producto = elements.correoProductoSelect.value;
   const esquema = elements.correoEsquemaSelect.value;
   const url = elements.correoUrlInput.value.trim();
 
@@ -483,7 +484,7 @@ async function validarCorreo() {
     const res = await authFetch(`${API_BASE_URL}/api/correo-validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ esquema, url })
+      body: JSON.stringify({ producto, esquema, url })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -663,7 +664,7 @@ function showAppForUser(user) {
   currentUser = user;
   document.body.classList.remove('logged-out');
   document.body.classList.add('logged-in');
-  const roleLabels = { usuario_gerencia: 'gerencia', administrador_editor: 'qlid' };
+  const roleLabels = { usuario_gerencia: 'gerencia', administrador_editor: 'editor' };
   const displayRole = roleLabels[user.role] ?? user.role;
   elements.sessionUser.textContent = '';
   elements.sessionRole.textContent = `Rol: ${displayRole}`;

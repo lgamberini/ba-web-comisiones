@@ -1538,6 +1538,7 @@ async function handleValidateCorreo(req, res) {
     return;
   }
 
+  const producto = String(body.producto || '').trim();
   const esquema = String(body.esquema || '').trim();
   const url = String(body.url || '').trim();
 
@@ -1555,28 +1556,34 @@ async function handleValidateCorreo(req, res) {
   try {
     const spreadsheetId = await getCachedAvanceComisionesSpreadsheetId();
 
-    // Fetch CRONOGRAMA columns E through N (E=esquema, H=periodicidad, L=fechaPago, N=asunto)
+    // Fetch CRONOGRAMA columns D through N (D=producto, E=esquema, H=periodicidad, L=fechaPago, N=asunto)
     const cronoResponse = await googleSheetsRequest(
-      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!E:N')}`,
+      `spreadsheets/${spreadsheetId}/values/${encodeURIComponent('CRONOGRAMA!D:N')}`,
       { valueRenderOption: 'UNFORMATTED_VALUE' }
     );
     const rows = cronoResponse.values || [];
     const dataRows = [];
     for (const r of rows.slice(1)) {
-      if (!String(r[0] || '').trim()) break;
+      if (!String(r[0] || '').trim() && !String(r[1] || '').trim()) break;
       dataRows.push(r);
     }
 
-    // In range E:N, offsets: E=0, F=1, G=2, H=3, I=4, J=5, K=6, L=7, M=8, N=9
-    const matchRow = dataRows.find(row => String(row[0] || '').trim() === esquema);
+    // In range D:N, offsets: D=0, E=1, F=2, G=3, H=4, I=5, J=6, K=7, L=8, M=9, N=10
+    const matchRow = dataRows.find(row => {
+      const rowEsquema = String(row[1] || '').trim();
+      const rowProducto = String(row[0] || '').trim();
+      if (rowEsquema !== esquema) return false;
+      if (producto) return rowProducto === producto;
+      return true;
+    });
     if (!matchRow) {
       sendJson(req, res, 404, { error: `No se encontró el esquema "${esquema}" en CRONOGRAMA.` });
       return;
     }
 
-    const periodicidad = String(matchRow[3] || '').trim();
-    const fechaPagoRaw = matchRow[7];
-    const asuntoBase = String(matchRow[9] || '').trim();
+    const periodicidad = String(matchRow[4] || '').trim();
+    const fechaPagoRaw = matchRow[8];
+    const asuntoBase = String(matchRow[10] || '').trim();
     const asunto = buildCorreoAsunto(asuntoBase, periodicidad);
 
     let fechaPagoStr = '';
