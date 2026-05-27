@@ -143,17 +143,18 @@ const SECTION_DICTIONARY = {
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
   'doc-l': 'generador-correos',
-  'doc-m': 'jira'
+  'doc-m': 'jira',
+  'doc-n': 'gestion-esquemas'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n'],
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -1346,12 +1347,26 @@ async function handleMaestroAll(req, res) {
 
   try {
     const id = MAESTRO_CENTRAL_SS_ID;
-    const [maestroRes, detalleRes] = await Promise.all([
-      googleSheetsRequest(`spreadsheets/${id}/values/${encodeURIComponent('MAESTRO!A:H')}`, { valueRenderOption: 'UNFORMATTED_VALUE' }),
-      googleSheetsRequest(`spreadsheets/${id}/values/${encodeURIComponent('DETALLE_INDICADORES!A:G')}`, { valueRenderOption: 'UNFORMATTED_VALUE' })
+
+    const readSheet = async (sheetName, cols) => {
+      try {
+        const res = await googleSheetsRequest(
+          `spreadsheets/${id}/values/${encodeURIComponent(`'${sheetName}'!A:${cols}`)}`,
+          { valueRenderOption: 'UNFORMATTED_VALUE' }
+        );
+        return res.values || [];
+      } catch (err) {
+        console.warn(`handleMaestroAll: hoja "${sheetName}" no accesible — ${err.message}`);
+        return [];
+      }
+    };
+
+    const [maestroValues, detalleValues] = await Promise.all([
+      readSheet('MAESTRO', 'H'),
+      readSheet('DETALLE_INDICADORES', 'G')
     ]);
 
-    const maestro = (maestroRes.values || []).slice(1).reduce((acc, r) => {
+    const maestro = maestroValues.slice(1).reduce((acc, r) => {
       const producto = String(r[0] || '').trim();
       if (!producto) return acc;
       acc.push({
@@ -1367,7 +1382,7 @@ async function handleMaestroAll(req, res) {
       return acc;
     }, []);
 
-    const detalle = (detalleRes.values || []).slice(1).reduce((acc, r) => {
+    const detalle = detalleValues.slice(1).reduce((acc, r) => {
       const producto = String(r[0] || '').trim();
       if (!producto) return acc;
       acc.push({

@@ -8,13 +8,13 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <!-- Content Security Policy - especifica qué recursos pueden cargarse -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com; connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com https://script.google.com; connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <title>HOLDING COMMISSIONS</title>
   <link
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260527-1" />
+  <link rel="stylesheet" href="styles.css?v=20260527-10" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -78,6 +78,10 @@
           <span class="nav-icon">📊</span>
           <span class="nav-label">Esquemas Comisionales</span>
         </button>
+        <button class="nav-item" data-section="gestion-esquemas">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label">Gestión de Esquemas</span>
+        </button>
         <button class="nav-item" data-section="resumen-avance">
           <span class="nav-icon">📑</span>
           <span class="nav-label">Seguimiento de Automatizaciones</span>
@@ -132,24 +136,35 @@
       <!-- Sección: Visualizado - Esquemas Comisionales (doc-b) -->
       <!-- Permite seleccionar productos y hojas de Google Sheets -->
       <section id="visualizado-section" class="section">
-        <section class="controls">
-          <label for="productSelect">Seleccionar producto</label>
-          <select id="productSelect"></select>
-
-          <button id="refreshListBtn" type="button">Actualizar lista de hojas</button>
-          <button id="refreshDataBtn" type="button" disabled>Actualizar datos hoja</button>
+        <section class="viz-controls">
+          <label class="viz-label" for="productSelect">Producto</label>
+          <select id="productSelect" class="viz-select"></select>
+          <label class="viz-label" for="sheetSelect">Esquema</label>
+          <select id="sheetSelect" class="viz-select"></select>
+          <button id="refreshListBtn" type="button">Actualizar</button>
+          <button id="refreshDataBtn" type="button" class="hidden">Actualizar datos hoja</button>
         </section>
 
-        <section class="sheet-area">
-          <label for="sheetSelect">Seleccionar esquema</label>
-          <select id="sheetSelect"></select>
-        </section>
-
-        <section class="data-area">
-          <h2 id="activeSheetTitle">Sin hoja seleccionada</h2>
-          <div id="status" class="status">Elige un producto y una hoja para ver los datos</div>
+        <section class="data-area" style="border:none;background:none;padding:0;">
+          <h2 id="activeSheetTitle" class="hidden"></h2>
+          <div id="status" class="status"></div>
           <div id="tableWrapper" class="table-wrapper"></div>
         </section>
+      </section>
+
+      <!-- Sección: Gestión de Esquemas Comisionales (doc-n) -->
+      <section id="gestion-esquemas-section" class="section">
+        <div class="gestion-esq-launcher">
+          <div class="gestion-esq-icon">⚙️</div>
+          <h2 class="gestion-esq-title">Gestión de Esquemas Comisionales</h2>
+          <p class="gestion-esq-desc">Crea nuevos períodos, actualiza indicadores y pesos, o cierra esquemas existentes directamente en la hoja MAESTRO.</p>
+          <a
+            href="https://script.google.com/a/macros/prestamype.com/s/AKfycbyP-8rnq62SU8slyugFSDHWVnSozCQk9WgWYjXGelulaJ2zSgtZh5m695l6HJDdVGjMaQ/exec"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="gestion-esq-btn"
+          >Abrir formulario</a>
+        </div>
       </section>
 
       <section id="resumen-avance-section" class="section">
@@ -411,6 +426,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260527-1"></script>
+  <script src="app.js?v=20260527-4"></script>
 </body>
 </html>

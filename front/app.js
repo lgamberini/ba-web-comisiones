@@ -68,7 +68,8 @@ const sectionDictionary = {
   'doc-j': 'organigrama',
   'doc-k': 'organigrama-ba',
   'doc-l': 'generador-correos',
-  'doc-m': 'jira'
+  'doc-m': 'jira',
+  'doc-n': 'gestion-esquemas'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -863,8 +864,6 @@ async function loadProducts(forceRefresh = false) {
     elements.productSelect.value = '';
     updateVisualizadoEsquemaSelect('');
     renderVisualizadoMaestro();
-    elements.activeSheetTitle.textContent = 'Esquemas Comisionales';
-    setStatus('');
   } catch (err) {
     console.error('Error loadProducts:', err.message);
     setStatus(`Error al cargar datos: ${err.message}`, true);
@@ -3636,16 +3635,26 @@ function formatPeriodo(fi, ff) {
 
 function renderVisualizadoMaestro() {
   if (!maestroAllCache) return;
-  const rows = maestroAllCache.maestro;
   const filtroProducto = elements.productSelect.value;
   const filtroEsquema = elements.sheetSelect.value;
 
+  elements.tableWrapper.innerHTML = '';
+
+  if (!filtroProducto && !filtroEsquema) {
+    elements.status.textContent = 'Selecciona un producto o esquema para ver los esquemas comisionales.';
+    elements.status.style.color = '#64748b';
+    return;
+  }
+  elements.status.textContent = '';
+
+  // soloProducto = producto seleccionado pero sin esquema → mostrar solo vigentes + conteo
+  const soloProducto = !!filtroProducto && !filtroEsquema;
+
+  const rows = maestroAllCache.maestro;
   const filtered = rows.filter(r =>
     (!filtroProducto || r.producto === filtroProducto) &&
     (!filtroEsquema || r.esquema === filtroEsquema)
   );
-
-  elements.tableWrapper.innerHTML = '';
 
   if (!filtered.length) {
     const msg = document.createElement('p');
@@ -3670,7 +3679,25 @@ function renderVisualizadoMaestro() {
     }
   }
 
-  for (const { producto, esquema, periodos } of grouped.values()) {
+  // En modo soloProducto filtrar solo esquemas con al menos un periodo vigente
+  let entries = [...grouped.values()];
+  if (soloProducto) {
+    entries = entries.filter(g => [...g.periodos.values()].some(p => !p.fechaFin));
+    if (!entries.length) {
+      const msg = document.createElement('p');
+      msg.className = 'status';
+      msg.textContent = 'No hay esquemas vigentes para este producto.';
+      elements.tableWrapper.appendChild(msg);
+      return;
+    }
+    // Badge conteo
+    const badge = document.createElement('p');
+    badge.className = 'maestro-count-badge';
+    badge.textContent = `${entries.length} esquema${entries.length !== 1 ? 's' : ''} vigente${entries.length !== 1 ? 's' : ''}`;
+    elements.tableWrapper.appendChild(badge);
+  }
+
+  for (const { producto, esquema, periodos } of entries) {
     const card = document.createElement('div');
     card.className = 'maestro-card';
 
@@ -3680,12 +3707,13 @@ function renderVisualizadoMaestro() {
     hdr.innerHTML = `<span class="maestro-card-producto">${producto}</span><span class="maestro-card-divider">›</span><span class="maestro-card-esquema">${esquema}</span>`;
     card.appendChild(hdr);
 
-    // Sort periods by fechaInicio descending (most recent first)
-    const sortedPeriodos = [...periodos.values()].sort((a, b) => {
+    // En modo soloProducto mostrar solo el periodo vigente; si no, todos ordenados desc
+    let sortedPeriodos = [...periodos.values()].sort((a, b) => {
       const ai = parseInt(a.fechaInicio) || 0;
       const bi = parseInt(b.fechaInicio) || 0;
       return bi - ai;
     });
+    if (soloProducto) sortedPeriodos = sortedPeriodos.filter(p => !p.fechaFin);
 
     for (const periodo of sortedPeriodos) {
       const periodDiv = document.createElement('div');
@@ -3759,7 +3787,6 @@ function selectProduct() {
   const producto = elements.productSelect.value;
   updateVisualizadoEsquemaSelect(producto);
   renderVisualizadoMaestro();
-  elements.activeSheetTitle.textContent = producto || 'Esquemas Comisionales';
 }
 
 async function loadResumenAvanceData() {
