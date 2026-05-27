@@ -201,6 +201,7 @@ let jiraCurrentBoardId = null;
 let jiraCurrentModalIssueKey = null;
 let currentProduct = null;         // Producto seleccionado en Visualizado
 let currentSheet = null;          // Hoja seleccionada
+let maestroAllCache = null;       // Cache combinada de MAESTRO + DETALLE_INDICADORES
 let currentSeguimientoSheet = null; // Hoja seleccionada en Seguimiento
 let autoRefreshId = null;         // ID del interval de auto-refresh
 let inactivityTimer = null;       // Timer de inactividad para logout automático
@@ -831,34 +832,44 @@ async function logout() {
   }
 }
 
-async function loadProducts() {
+async function loadProducts(forceRefresh = false) {
   if (!hasAccessToSection('visualizado')) return;
 
-  elements.productSelect.innerHTML = '<option value="">-- Cargando archivos... --</option>';
+  if (forceRefresh) maestroAllCache = null;
+
+  setStatus('Cargando esquemas...', false);
+  elements.productSelect.innerHTML = '<option value="">-- Cargando... --</option>';
+  elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar esquema --</option>';
+  elements.tableWrapper.innerHTML = '';
 
   try {
-    const res = await authFetch(`${API_BASE_URL}/api/esquemas-comisionales`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    sheetConfig = data.files || [];
+    if (!maestroAllCache) {
+      const res = await authFetch(`${API_BASE_URL}/api/maestro-all`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      maestroAllCache = data;
+    }
+
+    const rows = maestroAllCache.maestro;
+    const productos = [...new Set(rows.map(r => r.producto))].sort();
+
+    elements.productSelect.innerHTML = '<option value="">-- Todos los productos --</option>';
+    productos.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      elements.productSelect.appendChild(opt);
+    });
+    elements.productSelect.value = '';
+    updateVisualizadoEsquemaSelect('');
+    renderVisualizadoMaestro();
+    elements.activeSheetTitle.textContent = 'Esquemas Comisionales';
+    setStatus('');
   } catch (err) {
     console.error('Error loadProducts:', err.message);
-    sheetConfig = [];
+    setStatus(`Error al cargar datos: ${err.message}`, true);
+    elements.productSelect.innerHTML = '<option value="">-- Error --</option>';
   }
-
-  elements.productSelect.innerHTML = '<option value="">-- Seleccionar producto --</option>';
-  sheetConfig.forEach((item, idx) => {
-    const option = document.createElement("option");
-    option.value = idx;
-    option.textContent = item.nombre;
-    elements.productSelect.appendChild(option);
-  });
-  elements.productSelect.value = '';
-  elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
-  elements.activeSheetTitle.textContent = 'Sin producto seleccionado';
-  elements.tableWrapper.innerHTML = '';
-  elements.refreshDataBtn.disabled = true;
-  setStatus('Selecciona un producto para ver sus hojas.');
 }
 
 async function fetchSheetNames(productId) {
@@ -3005,15 +3016,17 @@ function renderDetalleIndicadoresTableToElement(grid, targetElement) {
     return;
   }
 
-  const headerInfo = findHeaderColumnsByLabels(grid, ['fuente', 'plataforma']);
-  if (!headerInfo) {
+  const headerInfoFull = findHeaderColumnsByLabels(grid, ['fuente', 'plataforma']);
+  const headerInfoFuente = findHeaderColumnsByLabels(grid, ['fuente']);
+  if (!headerInfoFuente) {
     appendTableToElement(grid, targetElement);
     return;
   }
 
-  const fuenteColumnIndex = headerInfo.columns.fuente;
-  const plataformaColumnIndex = headerInfo.columns.plataforma;
-  const hiddenColumns = new Set([plataformaColumnIndex]);
+  const fuenteColumnIndex = headerInfoFuente.columns.fuente;
+  const plataformaColumnIndex = headerInfoFull ? headerInfoFull.columns.plataforma : -1;
+  const hiddenColumns = new Set(plataformaColumnIndex >= 0 ? [plataformaColumnIndex] : []);
+  const headerInfo = headerInfoFull || headerInfoFuente;
   const table = document.createElement('table');
   table.className = 'app-data-table';
   const thead = document.createElement('thead');
@@ -3044,7 +3057,7 @@ function renderDetalleIndicadoresTableToElement(grid, targetElement) {
       }
 
       if (!isHeader && colIndex === fuenteColumnIndex) {
-        const platformLabel = getCellText(row, plataformaColumnIndex);
+        const platformLabel = plataformaColumnIndex >= 0 ? getCellText(row, plataformaColumnIndex) : '';
         const href = getCellLink(row, fuenteColumnIndex) || (isLikelyUrl(cell.text) ? cell.text : '');
         const platformKind = normalizePlatformKind(platformLabel, href);
 
@@ -3588,34 +3601,165 @@ function renderSummaryInfo(summaryGrid, detailGrid) {
   elements.resumenAvanceWrapper.appendChild(detailSection);
 }
 
-async function selectProduct() {
-  const selectedIndex = elements.productSelect.value;
-  const selection = sheetConfig[selectedIndex];
-  if (!selection) {
-    currentProduct = null;
-    currentSheet = null;
-    elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
-    elements.activeSheetTitle.textContent = 'Sin producto seleccionado';
-    elements.tableWrapper.innerHTML = '';
-    elements.refreshDataBtn.disabled = true;
-    setStatus('Selecciona un producto para ver sus hojas.');
+function updateVisualizadoEsquemaSelect(productoFiltro) {
+  if (!maestroAllCache) return;
+  const rows = maestroAllCache.maestro;
+  const filtered = productoFiltro ? rows.filter(r => r.producto === productoFiltro) : rows;
+  const esquemas = [...new Set(filtered.map(r => r.esquema))].sort();
+  elements.sheetSelect.innerHTML = '<option value="">-- Todos los esquemas --</option>';
+  esquemas.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e;
+    opt.textContent = e;
+    elements.sheetSelect.appendChild(opt);
+  });
+  elements.sheetSelect.value = '';
+}
+
+function formatPeso(peso) {
+  if (peso === '' || peso === null || peso === undefined) return '';
+  const num = Number(peso);
+  if (isNaN(num)) return String(peso);
+  return `${(num * 100).toFixed(0)}%`;
+}
+
+function formatPeriodo(fi, ff) {
+  const inicio = String(fi || '').trim();
+  const fin = String(ff || '').trim();
+  if (!inicio) return '—';
+  const fmtYYYYMM = v => {
+    if (/^\d{6}$/.test(v)) return `${v.slice(0, 4)}-${v.slice(4)}`;
+    return v;
+  };
+  return fin ? `${fmtYYYYMM(inicio)} → ${fmtYYYYMM(fin)}` : `${fmtYYYYMM(inicio)} → vigente`;
+}
+
+function renderVisualizadoMaestro() {
+  if (!maestroAllCache) return;
+  const rows = maestroAllCache.maestro;
+  const filtroProducto = elements.productSelect.value;
+  const filtroEsquema = elements.sheetSelect.value;
+
+  const filtered = rows.filter(r =>
+    (!filtroProducto || r.producto === filtroProducto) &&
+    (!filtroEsquema || r.esquema === filtroEsquema)
+  );
+
+  elements.tableWrapper.innerHTML = '';
+
+  if (!filtered.length) {
+    const msg = document.createElement('p');
+    msg.className = 'status';
+    msg.textContent = 'No hay esquemas que coincidan con los filtros seleccionados.';
+    elements.tableWrapper.appendChild(msg);
     return;
   }
 
-  currentProduct = selection;
-  currentSheet = null;
-  elements.activeSheetTitle.textContent = `Producto: ${currentProduct.nombre}`;
-  elements.refreshDataBtn.disabled = true;
-  elements.tableWrapper.innerHTML = "";
-
-  try {
-    const sheetNames = await fetchSheetNames(currentProduct.id);
-    renderSheetButtons(sheetNames);
-    setStatus('Selecciona una hoja para ver los datos.');
-  } catch (err) {
-    setStatus(err.message, true);
-    elements.sheetSelect.innerHTML = '<option value="">-- Seleccionar hoja --</option>';
+  // Group: producto > esquema > periodoKey (fechaInicio) > rows
+  const grouped = new Map();
+  for (const r of filtered) {
+    const pk = `${r.producto}||${r.esquema}`;
+    if (!grouped.has(pk)) grouped.set(pk, { producto: r.producto, esquema: r.esquema, periodos: new Map() });
+    const g = grouped.get(pk);
+    const periodKey = r.fechaInicio || '_';
+    if (!g.periodos.has(periodKey)) {
+      g.periodos.set(periodKey, { fechaInicio: r.fechaInicio, fechaFin: r.fechaFin, periodicidad: r.periodicidad, fechaPago: r.fechaPago, indicadores: [] });
+    }
+    if (r.indicador) {
+      g.periodos.get(periodKey).indicadores.push({ nombre: r.indicador, peso: r.peso });
+    }
   }
+
+  for (const { producto, esquema, periodos } of grouped.values()) {
+    const card = document.createElement('div');
+    card.className = 'maestro-card';
+
+    // Card header
+    const hdr = document.createElement('div');
+    hdr.className = 'maestro-card-header';
+    hdr.innerHTML = `<span class="maestro-card-producto">${producto}</span><span class="maestro-card-divider">›</span><span class="maestro-card-esquema">${esquema}</span>`;
+    card.appendChild(hdr);
+
+    // Sort periods by fechaInicio descending (most recent first)
+    const sortedPeriodos = [...periodos.values()].sort((a, b) => {
+      const ai = parseInt(a.fechaInicio) || 0;
+      const bi = parseInt(b.fechaInicio) || 0;
+      return bi - ai;
+    });
+
+    for (const periodo of sortedPeriodos) {
+      const periodDiv = document.createElement('div');
+      periodDiv.className = `maestro-period${!periodo.fechaFin ? ' maestro-period--active' : ''}`;
+
+      const periodHdr = document.createElement('div');
+      periodHdr.className = 'maestro-period-header';
+
+      const periodLabel = document.createElement('span');
+      periodLabel.className = 'maestro-period-label';
+      periodLabel.textContent = formatPeriodo(periodo.fechaInicio, periodo.fechaFin);
+      periodHdr.appendChild(periodLabel);
+
+      const meta = [];
+      if (periodo.periodicidad) meta.push(periodo.periodicidad);
+      if (periodo.fechaPago) meta.push(`Pago: ${periodo.fechaPago}`);
+      if (meta.length) {
+        const metaSpan = document.createElement('span');
+        metaSpan.className = 'maestro-period-meta';
+        metaSpan.textContent = meta.join(' · ');
+        periodHdr.appendChild(metaSpan);
+      }
+
+      if (!periodo.fechaFin) {
+        const badge = document.createElement('span');
+        badge.className = 'maestro-badge-active';
+        badge.textContent = 'VIGENTE';
+        periodHdr.appendChild(badge);
+      }
+
+      periodDiv.appendChild(periodHdr);
+
+      if (periodo.indicadores.length) {
+        const table = document.createElement('table');
+        table.className = 'app-data-table maestro-ind-table';
+
+        const thead = document.createElement('thead');
+        const trHdr = document.createElement('tr');
+        ['INDICADOR', 'PESO'].forEach(col => {
+          const th = document.createElement('th');
+          th.textContent = col;
+          trHdr.appendChild(th);
+        });
+        thead.appendChild(trHdr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const ind of periodo.indicadores) {
+          const tr = document.createElement('tr');
+          const tdN = document.createElement('td');
+          tdN.textContent = ind.nombre;
+          const tdP = document.createElement('td');
+          tdP.className = 'maestro-peso';
+          tdP.textContent = formatPeso(ind.peso);
+          tr.appendChild(tdN);
+          tr.appendChild(tdP);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        periodDiv.appendChild(table);
+      }
+
+      card.appendChild(periodDiv);
+    }
+
+    elements.tableWrapper.appendChild(card);
+  }
+}
+
+function selectProduct() {
+  const producto = elements.productSelect.value;
+  updateVisualizadoEsquemaSelect(producto);
+  renderVisualizadoMaestro();
+  elements.activeSheetTitle.textContent = producto || 'Esquemas Comisionales';
 }
 
 async function loadResumenAvanceData() {
@@ -3752,8 +3896,10 @@ async function loadGestionComisionesData() {
   }
 }
 
-async function loadDetalleIndicadoresData() {
+async function loadDetalleIndicadoresData(forceRefresh = false) {
   if (!hasAccessToSection('detalle-indicadores')) return;
+
+  if (forceRefresh) maestroAllCache = null;
 
   elements.detalleIndicadoresTitle.textContent = detalleIndicadoresConfig.nombre;
   elements.detalleIndicadoresStatus.textContent = 'Cargando...';
@@ -3761,13 +3907,31 @@ async function loadDetalleIndicadoresData() {
   elements.detalleIndicadoresWrapper.innerHTML = '';
 
   try {
-    const data = await fetchSingleSheetData(detalleIndicadoresConfig.id, detalleIndicadoresConfig.sheetName);
-    const grid = filterEmptyColumns(buildGridFromSheet(data, tableRange));
-    const headerInfo = findHeaderColumnsByLabels(grid, ['producto', 'esquema']);
-
-    if (!headerInfo) {
-      throw new Error('No se encontraron las columnas producto y esquema en DETALLE_INDICADORES.');
+    if (!maestroAllCache) {
+      const res = await authFetch(`${API_BASE_URL}/api/maestro-all`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      maestroAllCache = data;
     }
+
+    const detalleRows = maestroAllCache.detalle;
+    const headers = ['PRODUCTO', 'ESQUEMA', 'INDICADOR', 'CONCEPTO', 'CALCULO', '% MÁXIMO DE CUMPLIMIENTO', 'FUENTE'];
+    const makeCell = (text, hyperlink = '') => ({ text: String(text || ''), colSpan: 1, rowSpan: 1, covered: false, borders: null, backgroundColor: null, hyperlink, chipRuns: [] });
+    const grid = [
+      headers.map(h => makeCell(h)),
+      ...detalleRows.map(r => [
+        makeCell(r.producto),
+        makeCell(r.esquema),
+        makeCell(r.indicador),
+        makeCell(r.concepto),
+        makeCell(r.calculo),
+        makeCell(r.maxCumpl),
+        makeCell(r.fuente, isLikelyUrl(r.fuente) ? r.fuente : '')
+      ])
+    ];
+
+    const headerInfo = findHeaderColumnsByLabels(grid, ['producto', 'esquema']);
+    if (!headerInfo) throw new Error('No se encontraron las columnas producto y esquema en DETALLE_INDICADORES.');
 
     currentDetalleIndicadoresGrid = grid;
     currentDetalleIndicadoresHeaderInfo = headerInfo;
@@ -4553,11 +4717,11 @@ function init() {
   elements.logoutBtn.addEventListener("click", logout);
   elements.sidebarToggleBtn.addEventListener("click", toggleSidebar);
   elements.productSelect.addEventListener("change", selectProduct);
-  elements.sheetSelect.addEventListener("change", (e) => selectSheet(e.target.value));
+  elements.sheetSelect.addEventListener("change", () => { renderVisualizadoMaestro(); });
   elements.resumenAvanceRefreshBtn.addEventListener("click", loadResumenAvanceData);
   elements.seguimientoSheetSelect.addEventListener("change", (e) => selectSeguimientoSheet(e.target.value));
-  elements.refreshListBtn.addEventListener("click", selectProduct);
-  elements.refreshDataBtn.addEventListener("click", fetchSheetData);
+  elements.refreshListBtn.addEventListener("click", () => loadProducts(true));
+  elements.refreshDataBtn.addEventListener("click", () => loadProducts(true));
   elements.gestionProductoSelect.addEventListener("change", (e) => selectGestionProduct(e.target.value));
   elements.gestionRefreshBtn.addEventListener("click", loadGestionComisionesData);
   elements.detalleIndicadoresProductoSelect.addEventListener("change", (e) => {
@@ -4578,7 +4742,7 @@ function init() {
     currentDetalleIndicadoresPage = 1;
     renderDetalleIndicadoresTable();
   });
-  elements.detalleIndicadoresRefreshBtn.addEventListener("click", loadDetalleIndicadoresData);
+  elements.detalleIndicadoresRefreshBtn.addEventListener("click", () => loadDetalleIndicadoresData(true));
   elements.linksInteresProductoSelect.addEventListener("change", (e) => {
     currentLinksInteresProduct = e.target.value;
     currentLinksInteresPage = 1;

@@ -25,6 +25,7 @@ const ESQUEMAS_COMISIONALES_FOLDER_ID = '1yXPctwQ1_qCYlFYxyY2qPymJXVqvNkem'; // 
 const AVANCE_COMISIONES_ROOT_FOLDER_ID = '15VSV2I1xDUxIQZ-JZmi-OCCfOkWIV0By'; // Folder raíz de cronogramas
 const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs'; // Spreadsheet de seguimiento
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg'; // Spreadsheet gestión comisiones
+const MAESTRO_CENTRAL_SS_ID = '1Y0-JzexrJU51qvqGQs1Yw_0DxQ_CG3dxAkJld5yfvG8';
 
 // Hojas restringidas por spreadsheet - usuarios no pueden acceder a estas hojas
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
@@ -1332,6 +1333,63 @@ function handleLogout(req, res) {
   sendJson(req, res, 200, { ok: true });
 }
 
+async function handleMaestroAll(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+
+  const hasB = auth.user.allowedSections.includes('doc-b');
+  const hasH = auth.user.allowedSections.includes('doc-h');
+  if (!hasB && !hasH) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para acceder a esta sección.' });
+    return;
+  }
+
+  try {
+    const id = MAESTRO_CENTRAL_SS_ID;
+    const [maestroRes, detalleRes] = await Promise.all([
+      googleSheetsRequest(`spreadsheets/${id}/values/${encodeURIComponent('MAESTRO!A:H')}`, { valueRenderOption: 'UNFORMATTED_VALUE' }),
+      googleSheetsRequest(`spreadsheets/${id}/values/${encodeURIComponent('DETALLE_INDICADORES!A:G')}`, { valueRenderOption: 'UNFORMATTED_VALUE' })
+    ]);
+
+    const maestro = (maestroRes.values || []).slice(1).reduce((acc, r) => {
+      const producto = String(r[0] || '').trim();
+      if (!producto) return acc;
+      acc.push({
+        producto,
+        esquema     : String(r[1] || '').trim(),
+        fechaInicio : String(r[2] || '').trim(),
+        fechaFin    : String(r[3] || '').trim(),
+        indicador   : String(r[4] || '').trim(),
+        peso        : r[5] !== undefined && r[5] !== '' ? r[5] : '',
+        periodicidad: String(r[6] || '').trim(),
+        fechaPago   : String(r[7] || '').trim()
+      });
+      return acc;
+    }, []);
+
+    const detalle = (detalleRes.values || []).slice(1).reduce((acc, r) => {
+      const producto = String(r[0] || '').trim();
+      if (!producto) return acc;
+      acc.push({
+        producto,
+        esquema  : String(r[1] || '').trim(),
+        indicador: String(r[2] || '').trim(),
+        concepto : String(r[3] || '').trim(),
+        calculo  : String(r[4] || '').trim(),
+        maxCumpl : String(r[5] || '').trim(),
+        fuente   : String(r[6] || '').trim()
+      });
+      return acc;
+    }, []);
+
+    sendJson(req, res, 200, { maestro, detalle });
+  } catch (err) {
+    console.error('Error handleMaestroAll:', err.message);
+    const msg = IS_PRODUCTION ? 'Error interno del servidor.' : err.message;
+    sendJson(req, res, 500, { error: msg });
+  }
+}
+
 async function handleEsquemasComisionales(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -2180,6 +2238,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/logout') {
       handleLogout(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/maestro-all') {
+      await handleMaestroAll(req, res);
       return;
     }
 
