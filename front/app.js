@@ -69,7 +69,8 @@ const sectionDictionary = {
   'doc-k': 'organigrama-ba',
   'doc-l': 'generador-correos',
   'doc-m': 'jira',
-  'doc-n': 'gestion-esquemas'
+  'doc-n': 'gestion-esquemas',
+  'doc-o': 'manuales-flujos'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -195,6 +196,12 @@ const elements = {
   jiraModalDueDate: document.getElementById("jiraModalDueDate"),
   jiraModalStartDateStatus: document.getElementById("jiraModalStartDateStatus"),
   jiraModalDueDateStatus: document.getElementById("jiraModalDueDateStatus"),
+  manualesTipoFilter:   document.getElementById("manualesTipoFilter"),
+  manualesAreaFilter:   document.getElementById("manualesAreaFilter"),
+  manualesSearch:       document.getElementById("manualesSearch"),
+  manualesRefreshBtn:   document.getElementById("manualesRefreshBtn"),
+  manualesStatus:       document.getElementById("manualesStatus"),
+  manualesContainer:    document.getElementById("manualesContainer"),
 };
 
 // Estado actual de la aplicación
@@ -244,6 +251,8 @@ let currentLinksInteresItems = [];
 let currentLinksInteresProduct = 'Todo';
 let currentLinksInteresAction = 'Todo';
 let currentLinksInteresSearch = '';
+let manualesData = [];
+let manualesViewing = null;
 let currentDetalleIndicadoresPage = 1;
 const DETALLE_INDICADORES_PAGE_SIZE = 10;
 let currentLinksInteresPage = 1;
@@ -4366,6 +4375,85 @@ function changeSection(sectionId) {
   if (sectionId === 'jira') {
     loadJiraSection();
   }
+  if (sectionId === 'manuales-flujos') {
+    loadManualesFlujos();
+  }
+}
+
+// ── Manuales / Flujos ─────────────────────────────────────────────────────────
+
+function toPreviewUrl(link) {
+  if (!link) return '';
+  return link
+    .replace(/\/edit(\?.*)?$/, '/preview')
+    .replace(/\/view(\?.*)?$/, '/preview');
+}
+
+async function loadManualesFlujos(forceRefresh = false) {
+  if (!hasAccessToSection('manuales-flujos')) return;
+  if (!forceRefresh && manualesData.length) { renderManualesList(); return; }
+  elements.manualesStatus.textContent = 'Cargando...';
+  elements.manualesStatus.style.display = 'block';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/manuales-flujos`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al cargar');
+    manualesData = data.items || [];
+    const areas = [...new Set(manualesData.map(i => i.area).filter(Boolean))].sort();
+    elements.manualesAreaFilter.innerHTML =
+      '<option value="">Todas las áreas</option>' +
+      areas.map(a => `<option value="${escHtml(a)}">${escHtml(a)}</option>`).join('');
+    elements.manualesStatus.style.display = 'none';
+    renderManualesList();
+  } catch (err) {
+    elements.manualesStatus.textContent = 'Error: ' + err.message;
+    elements.manualesStatus.style.color = '#991b1b';
+  }
+}
+
+function renderManualesList() {
+  const tipo = elements.manualesTipoFilter.value;
+  const area = elements.manualesAreaFilter.value;
+  const q    = elements.manualesSearch.value.toLowerCase().trim();
+
+  const filtered = manualesData.filter(item => {
+    if (tipo && item.tipo !== tipo) return false;
+    if (area && item.area !== area) return false;
+    if (q && !item.titulo.toLowerCase().includes(q) && !item.descripcion.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    elements.manualesContainer.innerHTML = '<p style="color:#64748b;padding:1rem 0">No se encontraron documentos.</p>';
+    return;
+  }
+
+  elements.manualesContainer.innerHTML = filtered.map(item => {
+    const tipoClass = item.tipo.toLowerCase() === 'flujo' ? 'manual-tipo-flujo' : 'manual-tipo-manual';
+    return `
+      <div class="manual-card">
+        <div class="manual-card-body">
+          <div class="manual-card-top">
+            <span class="manual-tipo-badge ${tipoClass}">${escHtml(item.tipo)}</span>
+            ${item.area ? `<span class="manual-area">${escHtml(item.area)}</span>` : ''}
+          </div>
+          <h3 class="manual-titulo">${escHtml(item.titulo)}</h3>
+          ${item.descripcion ? `<p class="manual-desc">${escHtml(item.descripcion)}</p>` : ''}
+          ${item.autor ? `<p class="manual-meta">Por ${escHtml(item.autor)}</p>` : ''}
+        </div>
+        <div class="manual-card-actions">
+          ${item.link ? `
+            <a class="manual-btn-view" href="${escHtml(toPreviewUrl(item.link))}" target="_blank" rel="noopener noreferrer">👁 Ver</a>
+            <a class="manual-btn-edit" href="${escHtml(item.link)}" target="_blank" rel="noopener noreferrer">✏️ Editar</a>
+          ` : '<span style="color:#94a3b8;font-size:0.8rem">Sin link</span>'}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Jira ──────────────────────────────────────────────────────────────────────
@@ -4795,6 +4883,10 @@ function init() {
   elements.correoEjecutarBtn.addEventListener("click", ejecutarCorreo);
   elements.jiraGuardarBtn.addEventListener("click", saveJiraToken);
   elements.jiraRefreshBtn.addEventListener("click", () => loadBoardIssues(jiraCurrentBoardId));
+  elements.manualesRefreshBtn.addEventListener("click", () => loadManualesFlujos(true));
+  elements.manualesTipoFilter.addEventListener("change", renderManualesList);
+  elements.manualesAreaFilter.addEventListener("change", renderManualesList);
+  elements.manualesSearch.addEventListener("input", renderManualesList);
   elements.jiraBoardSelect.addEventListener("change", (e) => loadBoardIssues(e.target.value));
   elements.jiraModalClose.addEventListener("click", closeIssueModal);
   elements.jiraIssueModal.addEventListener("click", (e) => { if (e.target === elements.jiraIssueModal) closeIssueModal(); });

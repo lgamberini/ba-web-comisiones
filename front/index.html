@@ -8,13 +8,13 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <!-- Content Security Policy - especifica qué recursos pueden cargarse -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; frame-src https://docs.google.com https://app.powerbi.com https://accounts.google.com https://script.google.com; connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; frame-src https://docs.google.com https://drive.google.com https://app.powerbi.com https://accounts.google.com https://script.google.com; connect-src 'self' https://ba-web-comisiones.onrender.com https://oauth2.googleapis.com; img-src 'self' data: https://lh3.googleusercontent.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <title>HOLDING COMMISSIONS</title>
   <link
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260527-10" />
+  <link rel="stylesheet" href="styles.css?v=20260527-12" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -109,6 +109,10 @@
         <button class="nav-item" data-section="detalle-indicadores">
           <span class="nav-icon">🗂️</span>
           <span class="nav-label">Detalle Indicadores</span>
+        </button>
+        <button class="nav-item" data-section="manuales-flujos">
+          <span class="nav-icon">📚</span>
+          <span class="nav-label">Manuales / Flujos</span>
         </button>
         <button class="nav-item" data-section="links-interes">
           <span class="nav-icon">🔗</span>
@@ -261,6 +265,24 @@
           <div id="detalleIndicadoresStatus" class="status">Abre esta sección para cargar la información.</div>
           <div id="detalleIndicadoresWrapper" class="table-wrapper"></div>
         </section>
+      </section>
+
+      <!-- Sección: Manuales / Flujos (doc-o) -->
+      <section id="manuales-flujos-section" class="section">
+        <section class="manuales-controls">
+          <select id="manualesTipoFilter">
+            <option value="">Todos los tipos</option>
+            <option value="Manual">Manual</option>
+            <option value="Flujo">Flujo</option>
+          </select>
+          <select id="manualesAreaFilter">
+            <option value="">Todas las áreas</option>
+          </select>
+          <input type="text" id="manualesSearch" placeholder="Buscar por título o descripción..." />
+          <button id="manualesRefreshBtn" type="button">Actualizar</button>
+        </section>
+        <div id="manualesStatus" class="status" style="display:none;color:#475569"></div>
+        <div id="manualesContainer"></div>
       </section>
 
       <section id="links-interes-section" class="section">
@@ -426,6 +448,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260527-4"></script>
+  <script src="app.js?v=20260527-6"></script>
 </body>
 </html>

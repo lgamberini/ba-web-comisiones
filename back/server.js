@@ -144,17 +144,18 @@ const SECTION_DICTIONARY = {
   'doc-k': 'organigrama-ba',
   'doc-l': 'generador-correos',
   'doc-m': 'jira',
-  'doc-n': 'gestion-esquemas'
+  'doc-n': 'gestion-esquemas',
+  'doc-o': 'manuales-flujos'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n', 'doc-o'],
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n', 'doc-o'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -1334,6 +1335,42 @@ function handleLogout(req, res) {
   sendJson(req, res, 200, { ok: true });
 }
 
+async function handleManualesFlujos(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-o')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const range = encodeURIComponent("'MANUALES/FLUJOS'!A:F");
+    const data = await googleSheetsRequest(
+      `spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}/values/${range}`,
+      { valueRenderOption: 'UNFORMATTED_VALUE' }
+    );
+    const values = data.values || [];
+    if (values.length < 2) { sendJson(req, res, 200, { items: [] }); return; }
+    const [headers, ...rows] = values;
+    const idx = {};
+    headers.forEach((h, i) => { idx[String(h).trim().toLowerCase()] = i; });
+    const items = rows
+      .filter(r => r.some(c => c !== '' && c !== null && c !== undefined))
+      .map(r => ({
+        titulo     : String(r[idx['titulo']]          ?? '').trim(),
+        descripcion: String(r[idx['descripcion']]     ?? '').trim(),
+        tipo       : String(r[idx['tipo']]            ?? '').trim(),
+        area       : String(r[idx['area / producto']] ?? r[idx['area/producto']] ?? '').trim(),
+        autor      : String(r[idx['autor']]           ?? '').trim(),
+        link       : String(r[idx['link']]            ?? '').trim(),
+      }))
+      .filter(item => item.titulo);
+    sendJson(req, res, 200, { items });
+  } catch (err) {
+    console.error('handleManualesFlujos error:', err.message);
+    sendJson(req, res, 500, { error: err.message });
+  }
+}
+
 async function handleMaestroAll(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -2258,6 +2295,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/maestro-all') {
       await handleMaestroAll(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/manuales-flujos') {
+      await handleManualesFlujos(req, res);
       return;
     }
 
