@@ -26,6 +26,7 @@ const AVANCE_COMISIONES_ROOT_FOLDER_ID = '15VSV2I1xDUxIQZ-JZmi-OCCfOkWIV0By'; //
 const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs'; // Spreadsheet de seguimiento
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg'; // Spreadsheet gestión comisiones
 const MAESTRO_CENTRAL_SS_ID = '1Y0-JzexrJU51qvqGQs1Yw_0DxQ_CG3dxAkJld5yfvG8';
+const TIEMPO_SS_ID = '1QNFrx3D7FpwzgbkWFewZTWtjS0CHziP5bdMcx6JYN-8';
 
 // Hojas restringidas por spreadsheet - usuarios no pueden acceder a estas hojas
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
@@ -145,17 +146,18 @@ const SECTION_DICTIONARY = {
   'doc-l': 'generador-correos',
   'doc-m': 'jira',
   'doc-n': 'gestion-esquemas',
-  'doc-o': 'manuales-flujos'
+  'doc-o': 'manuales-flujos',
+  'doc-p': 'analisis-tiempo'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n', 'doc-o'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n', 'doc-o', 'doc-p'],
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n', 'doc-o'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n', 'doc-o', 'doc-p'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -1442,6 +1444,47 @@ async function handleMaestroAll(req, res) {
   }
 }
 
+async function handleTiempoData(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-p')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const response = await googleSheetsRequest(
+      `spreadsheets/${TIEMPO_SS_ID}/values/${encodeURIComponent("'TIEMPO'!A:K")}`,
+      { valueRenderOption: 'UNFORMATTED_VALUE' }
+    );
+    const rawValues = response.values || [];
+    if (rawValues.length < 2) {
+      sendJson(req, res, 200, { rows: [] });
+      return;
+    }
+    const rows = rawValues.slice(1).reduce((acc, r) => {
+      const periodo  = String(r[0] || '').trim();
+      const producto = String(r[1] || '').trim();
+      if (!periodo || !producto) return acc;
+      const toNum = v => (v !== undefined && v !== '' && !isNaN(Number(v))) ? Number(v) : null;
+      acc.push({
+        periodo,
+        producto,
+        perfil       : String(r[2] || '').trim(),
+        fechaMax     : String(r[3] || '').trim(),
+        fechaReal    : String(r[4] || '').trim(),
+        difFechas    : toNum(r[5]),
+        diasDoingReview : toNum(r[9]),
+        diasReviewDone  : toNum(r[10])
+      });
+      return acc;
+    }, []);
+    sendJson(req, res, 200, { rows });
+  } catch (err) {
+    console.error('Error handleTiempoData:', err.message);
+    sendJson(req, res, 500, { error: IS_PRODUCTION ? 'Error interno del servidor.' : err.message });
+  }
+}
+
 async function handleEsquemasComisionales(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -2295,6 +2338,11 @@ async function requestHandler(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/maestro-all') {
       await handleMaestroAll(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/tiempo-data') {
+      await handleTiempoData(req, res);
       return;
     }
 

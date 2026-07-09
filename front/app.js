@@ -70,7 +70,8 @@ const sectionDictionary = {
   'doc-l': 'generador-correos',
   'doc-m': 'jira',
   'doc-n': 'gestion-esquemas',
-  'doc-o': 'manuales-flujos'
+  'doc-o': 'manuales-flujos',
+  'doc-p': 'analisis-tiempo'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -4378,6 +4379,9 @@ function changeSection(sectionId) {
   if (sectionId === 'manuales-flujos') {
     loadManualesFlujos();
   }
+  if (sectionId === 'analisis-tiempo') {
+    loadTiempoData();
+  }
 }
 
 // ── Manuales / Flujos ─────────────────────────────────────────────────────────
@@ -4823,6 +4827,409 @@ async function openTransitionMenu(btn, issueKey) {
   }
 }
 
+// ── Análisis de Tiempos ────────────────────────────────────────────────────────
+
+const TIEMPO_COLORS = ['#1D4ED8','#0F766E','#7C3AED','#B45309','#BE185D','#065F46','#9D174D','#1E3A5F'];
+const MESES_ES = { enero:0, febrero:1, marzo:2, abril:3, mayo:4, junio:5, julio:6, agosto:7, septiembre:8, octubre:9, noviembre:10, diciembre:11 };
+
+let tiempoAllRows = [];
+let tiempoSelectedProducts = new Set();
+let tiempoPeriodoFilter = '';
+let tiempoDesdeFilter = '';
+let tiempoHastaFilter = '';
+
+function parsePeriodoToDate(p) {
+  const s = String(p || '').trim();
+  // Formato numérico YYYYMM (ej: 202605)
+  if (/^\d{6}$/.test(s)) return new Date(Number(s.slice(0,4)), Number(s.slice(4,6)) - 1, 1);
+  // Formato numérico YYYY-MM
+  if (/^\d{4}-\d{2}$/.test(s)) return new Date(Number(s.slice(0,4)), Number(s.slice(5,7)) - 1, 1);
+  // Formato texto "mayo 2026"
+  const parts = s.toLowerCase().split(/\s+/);
+  if (parts.length >= 2) {
+    const m = MESES_ES[parts[0]];
+    const y = Number(parts[parts.length - 1]);
+    if (m !== undefined && y) return new Date(y, m, 1);
+  }
+  return new Date(0);
+}
+
+function formatPeriodoLabel(p) {
+  const s = String(p || '').trim();
+  const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  if (/^\d{6}$/.test(s)) return `${MESES_CORTO[Number(s.slice(4,6))-1]} ${s.slice(0,4)}`;
+  if (/^\d{4}-\d{2}$/.test(s)) return `${MESES_CORTO[Number(s.slice(5,7))-1]} ${s.slice(0,4)}`;
+  return s;
+}
+
+function sortedPeriodos(periods) {
+  return [...periods].sort((a, b) => parsePeriodoToDate(a) - parsePeriodoToDate(b));
+}
+
+function tiempoAvg(arr) {
+  const valid = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+  return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
+}
+
+function resetTiempoState() {
+  tiempoAllRows = [];
+  tiempoSelectedProducts = new Set();
+  tiempoPeriodoFilter = '';
+  tiempoDesdeFilter = '';
+  tiempoHastaFilter = '';
+  const el = id => document.getElementById(id);
+  if (el('tiempoKpiRow')) el('tiempoKpiRow').innerHTML = '';
+  if (el('tiempoChartContainer')) el('tiempoChartContainer').innerHTML = '';
+  if (el('tiempoProductChips')) el('tiempoProductChips').innerHTML = '';
+  if (el('tiempoStatus')) { el('tiempoStatus').textContent = 'Abre esta sección para cargar la información.'; el('tiempoStatus').style.color = '#334155'; }
+}
+
+async function loadTiempoData(forceRefresh = false) {
+  if (!hasAccessToSection('analisis-tiempo')) return;
+  if (!forceRefresh && tiempoAllRows.length) { renderTiempoSection(); return; }
+  const status = document.getElementById('tiempoStatus');
+  if (status) { status.textContent = 'Cargando...'; status.style.color = '#334155'; }
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/tiempo-data`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    tiempoAllRows = data.rows || [];
+    renderTiempoSection();
+  } catch (err) {
+    if (status) { status.textContent = `Error: ${err.message}`; status.style.color = '#b91c1c'; }
+  }
+}
+
+function getTiempoFilteredRows() {
+  return tiempoAllRows.filter(r => {
+    if (tiempoSelectedProducts.size > 0 && !tiempoSelectedProducts.has(r.producto)) return false;
+    if (tiempoPeriodoFilter) return r.periodo === tiempoPeriodoFilter;
+    if (tiempoDesdeFilter || tiempoHastaFilter) {
+      const rowDate = parsePeriodoToDate(r.periodo);
+      if (tiempoDesdeFilter && rowDate < parsePeriodoToDate(tiempoDesdeFilter)) return false;
+      if (tiempoHastaFilter && rowDate > parsePeriodoToDate(tiempoHastaFilter)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTiempoSection() {
+  const allProducts = [...new Set(tiempoAllRows.map(r => r.producto).filter(Boolean))].sort();
+  const allPeriodos = sortedPeriodos([...new Set(tiempoAllRows.map(r => r.periodo).filter(Boolean))]);
+  renderTiempoChips(allProducts);
+  renderTiempoPeriodSelectors(allPeriodos);
+  const filtered = getTiempoFilteredRows();
+  renderTiempoKPIs(filtered);
+  renderTiempoChart(filtered, allPeriodos, allProducts);
+  const status = document.getElementById('tiempoStatus');
+  if (status) status.textContent = '';
+}
+
+function renderTiempoChips(allProducts) {
+  const wrap = document.getElementById('tiempoProductChips');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const makeChip = (label, isActive, onClick) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tiempo-chip' + (isActive ? ' is-active' : '');
+    btn.textContent = label;
+    btn.addEventListener('click', onClick);
+    return btn;
+  };
+  wrap.appendChild(makeChip('Todos', tiempoSelectedProducts.size === 0, () => {
+    tiempoSelectedProducts = new Set();
+    renderTiempoSection();
+  }));
+  allProducts.forEach(p => {
+    wrap.appendChild(makeChip(p, tiempoSelectedProducts.has(p), () => {
+      if (tiempoSelectedProducts.has(p)) tiempoSelectedProducts.delete(p);
+      else tiempoSelectedProducts.add(p);
+      if (tiempoSelectedProducts.size === allProducts.length) tiempoSelectedProducts = new Set();
+      renderTiempoSection();
+    }));
+  });
+}
+
+function renderTiempoPeriodSelectors(allPeriodos) {
+  const opts = allPeriodos.map(p => `<option value="${p}">${p}</option>`).join('');
+  ['tiempoPeriodoSelect','tiempoDesdeSelect','tiempoHastaSelect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const prefix = id === 'tiempoPeriodoSelect' ? '<option value="">Todos los periodos</option>' : '<option value="">—</option>';
+    el.innerHTML = prefix + opts;
+  });
+  const periodoSel = document.getElementById('tiempoPeriodoSelect');
+  const desdeSel   = document.getElementById('tiempoDesdeSelect');
+  const hastaSel   = document.getElementById('tiempoHastaSelect');
+  if (periodoSel) periodoSel.value = tiempoPeriodoFilter;
+  if (desdeSel)   desdeSel.value   = tiempoDesdeFilter;
+  if (hastaSel)   hastaSel.value   = tiempoHastaFilter;
+}
+
+function renderTiempoKPIs(rows) {
+  const kpiRow = document.getElementById('tiempoKpiRow');
+  if (!kpiRow) return;
+  const avgDR    = tiempoAvg(rows.map(r => r.diasDoingReview));
+  const avgRD    = tiempoAvg(rows.map(r => r.diasReviewDone));
+  const avgTotal = (avgDR !== null && avgRD !== null) ? avgDR + avgRD
+    : tiempoAvg(rows.map(r => (r.diasDoingReview || 0) + (r.diasReviewDone || 0)));
+  const envioRows   = rows.filter(r => r.difFechas !== null);
+  const avgEnvio    = tiempoAvg(envioRows.map(r => r.difFechas));
+  // difFechas = Fecha Max − Fecha Real → positivo = enviado ANTES del límite (bueno), negativo = tarde (malo)
+  const slaOnTime   = envioRows.filter(r => r.difFechas >= 0).length;
+  const slaPct      = envioRows.length ? Math.round(slaOnTime / envioRows.length * 100) : null;
+  const fmt         = v => v !== null ? `${v.toFixed(1)} días` : '—';
+  const fmtEnvio    = v => v === null ? '—' : v >= 0 ? `+${v.toFixed(1)} días` : `${v.toFixed(1)} días`;
+  const slaColor    = slaPct === null ? '' : slaPct >= 80 ? '#166534' : slaPct >= 50 ? '#92400E' : '#991B1B';
+  const envioColor  = avgEnvio === null ? '#64748b' : avgEnvio >= 0 ? '#166534' : '#991B1B';
+  const envioLabel  = avgEnvio === null ? '' : avgEnvio >= 0 ? 'días promedio antes del límite' : 'días promedio de retraso';
+  kpiRow.innerHTML = `
+    <div class="tiempo-kpi-card">
+      <div class="tiempo-kpi-label">Doing → To Review</div>
+      <div class="tiempo-kpi-value">${fmt(avgDR)}</div>
+      <div class="tiempo-kpi-sub">Tiempo promedio · ${rows.filter(r=>r.diasDoingReview!==null).length} esquemas</div>
+    </div>
+    <div class="tiempo-kpi-card">
+      <div class="tiempo-kpi-label">To Review → Done</div>
+      <div class="tiempo-kpi-value">${fmt(avgRD)}</div>
+      <div class="tiempo-kpi-sub">Tiempo promedio · ${rows.filter(r=>r.diasReviewDone!==null).length} esquemas</div>
+    </div>
+    <div class="tiempo-kpi-card">
+      <div class="tiempo-kpi-label">Total (Doing → Done)</div>
+      <div class="tiempo-kpi-value">${fmt(avgTotal)}</div>
+      <div class="tiempo-kpi-sub" style="${slaColor ? `color:${slaColor};font-weight:700` : ''}">${slaPct !== null ? `${slaPct}% cumplió fecha pactada (${slaOnTime}/${envioRows.length})` : 'SLA: sin datos de fecha'}</div>
+    </div>
+    <div class="tiempo-kpi-card">
+      <div class="tiempo-kpi-label">Envío a Finanzas</div>
+      <div class="tiempo-kpi-value" style="color:${envioColor}">${fmtEnvio(avgEnvio)}</div>
+      <div class="tiempo-kpi-sub" style="color:${envioColor};font-weight:600">${envioLabel || '—'} · ${envioRows.length} registros</div>
+    </div>`;
+}
+
+function renderTiempoChart(rows, allPeriodos, allProducts) {
+  const container = document.getElementById('tiempoChartContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!rows.length) {
+    container.innerHTML = '<div class="status" style="text-align:center;padding:2rem;color:#64748b">Sin datos para los filtros seleccionados.</div>';
+    return;
+  }
+  const visibleProducts = tiempoSelectedProducts.size > 0
+    ? allProducts.filter(p => tiempoSelectedProducts.has(p))
+    : allProducts;
+  const visiblePeriodos = sortedPeriodos([...new Set(rows.map(r => r.periodo).filter(Boolean))]);
+  renderTiempoLineChart(container, rows, visiblePeriodos, visibleProducts);
+}
+
+function mkSvgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+  return el;
+}
+
+function renderTiempoBarChart(container, rows, products) {
+  const data = products.map(p => {
+    const pr = rows.filter(r => r.producto === p);
+    return { producto: p, avgDR: tiempoAvg(pr.map(r => r.diasDoingReview)), avgRD: tiempoAvg(pr.map(r => r.diasReviewDone)) };
+  }).filter(d => d.avgDR !== null || d.avgRD !== null);
+
+  if (!data.length) { container.innerHTML = '<div class="status" style="text-align:center;padding:2rem;color:#64748b">Sin datos suficientes.</div>'; return; }
+
+  const LABEL_W = 160, PAD_T = 48, PAD_B = 36, PAD_R = 70, BAR_H = 20, BAR_GAP = 5, GROUP_GAP = 16;
+  const GROUP_H = BAR_H * 2 + BAR_GAP;
+  const W = Math.max(Math.min((container.clientWidth || 800), 960), 480);
+  const chartW = W - LABEL_W - PAD_R;
+  const H = PAD_T + data.length * (GROUP_H + GROUP_GAP) + PAD_B;
+  const maxVal = Math.max(...data.map(d => Math.max(d.avgDR || 0, d.avgRD || 0)), 1);
+  const scX = v => (v || 0) / maxVal * chartW;
+
+  const svg = mkSvgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;background:#F8FAFC;border-radius:8px' });
+  svg.appendChild(mkSvgEl('rect', { x: 0, y: 0, width: W, height: H, fill: '#F8FAFC', rx: 8 }));
+
+  [['#3B82F6','Doing → To Review'],['#0F766E','To Review → Done']].forEach(([c, lbl], i) => {
+    svg.appendChild(mkSvgEl('rect', { x: LABEL_W + i * 185, y: 12, width: 14, height: 12, rx: 3, fill: c }));
+    const t = mkSvgEl('text', { x: LABEL_W + i * 185 + 18, y: 22, fill: '#334155', 'font-size': 12 });
+    t.textContent = lbl; svg.appendChild(t);
+  });
+
+  const TICKS = 5;
+  for (let i = 0; i <= TICKS; i++) {
+    const x = LABEL_W + (i / TICKS) * chartW;
+    svg.appendChild(mkSvgEl('line', { x1: x, x2: x, y1: PAD_T - 8, y2: H - PAD_B, stroke: '#CBD5E1', 'stroke-width': 1 }));
+    const t = mkSvgEl('text', { x, y: H - PAD_B + 15, 'text-anchor': 'middle', fill: '#64748B', 'font-size': 11 });
+    t.textContent = Math.round(maxVal * i / TICKS); svg.appendChild(t);
+  }
+  const xLbl = mkSvgEl('text', { x: LABEL_W + chartW / 2, y: H - 4, 'text-anchor': 'middle', fill: '#64748B', 'font-size': 11 });
+  xLbl.textContent = 'Días promedio'; svg.appendChild(xLbl);
+
+  data.forEach((d, i) => {
+    const gy = PAD_T + i * (GROUP_H + GROUP_GAP);
+    const lbl = mkSvgEl('text', { x: LABEL_W - 8, y: gy + GROUP_H / 2 + 4, 'text-anchor': 'end', fill: '#1E293B', 'font-size': 12, 'font-weight': 600 });
+    lbl.textContent = d.producto; svg.appendChild(lbl);
+    [[d.avgDR, '#3B82F6', 0],[d.avgRD, '#0F766E', BAR_H + BAR_GAP]].forEach(([val, color, dy]) => {
+      if (val === null) return;
+      const bw = Math.max(scX(val), 2);
+      svg.appendChild(mkSvgEl('rect', { x: LABEL_W, y: gy + dy, width: bw, height: BAR_H, rx: 3, fill: color }));
+      const vt = mkSvgEl('text', { x: LABEL_W + bw + 5, y: gy + dy + BAR_H - 5, fill: '#334155', 'font-size': 11 });
+      vt.textContent = val.toFixed(1); svg.appendChild(vt);
+    });
+  });
+  container.appendChild(svg);
+}
+
+function getTiempoTooltip() {
+  let tip = document.getElementById('tiempoFloatTooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'tiempoFloatTooltip';
+    tip.className = 'tiempo-float-tooltip';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function renderTiempoLineChart(container, rows, visiblePeriodos, products) {
+  const METRICS = [
+    { key: 'diasDoingReview', label: 'Doing → To Review',              color: '#3B82F6', dash: '' },
+    { key: 'diasReviewDone',  label: 'To Review → Done',               color: '#0D9488', dash: '' },
+    { key: 'difFechas',       label: 'Margen envío Finanzas',           color: '#7C3AED', dash: '6 3' }
+  ];
+
+  const metricData = METRICS.map(m => ({
+    ...m,
+    points: visiblePeriodos.map(period => ({
+      period,
+      avg: tiempoAvg(rows.filter(r => r.periodo === period).map(r => r[m.key]).filter(v => v !== null))
+    }))
+  })).filter(m => m.points.some(p => p.avg !== null));
+
+  if (!metricData.length) {
+    container.innerHTML = '<div class="status" style="text-align:center;padding:2rem;color:#64748b">Sin datos suficientes.</div>';
+    return;
+  }
+
+  const PAD_L = 56, PAD_R = 24, PAD_T = 24, PAD_B = 72;
+  const LEG_H = 28;
+  const W = Math.max(Math.min((container.clientWidth || 860), 1100), 500);
+  const H = 320 + LEG_H;
+  const chartW = W - PAD_L - PAD_R, chartH = H - PAD_T - PAD_B - LEG_H;
+
+  const allVals = metricData.flatMap(m => m.points.map(p => p.avg).filter(v => v !== null));
+  const rawMax = Math.max(...allVals), rawMin = Math.min(...allVals);
+  const span = (rawMax - rawMin) * 0.22 || 1.5;
+  const maxVal = rawMax + span, minVal = Math.min(rawMin - span, 0);
+
+  const xScale = i => PAD_L + (visiblePeriodos.length > 1 ? (i / (visiblePeriodos.length - 1)) * chartW : chartW / 2);
+  const yScale = v => PAD_T + chartH - ((v - minVal) / (maxVal - minVal)) * chartH;
+
+  const svg = mkSvgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', style: 'display:block;cursor:default' });
+  svg.appendChild(mkSvgEl('rect', { x: 0, y: 0, width: W, height: H, fill: '#F8FAFC', rx: 10 }));
+  svg.appendChild(mkSvgEl('rect', { x: PAD_L, y: PAD_T, width: chartW, height: chartH, fill: '#FFFFFF', rx: 4 }));
+
+  // Línea Y=0
+  if (minVal < 0 && maxVal > 0) {
+    const y0 = yScale(0);
+    svg.appendChild(mkSvgEl('line', { x1: PAD_L, x2: PAD_L + chartW, y1: y0, y2: y0, stroke: '#94A3B8', 'stroke-width': 1, 'stroke-dasharray': '3 3' }));
+    const t0 = mkSvgEl('text', { x: PAD_L - 6, y: y0 + 4, 'text-anchor': 'end', fill: '#94A3B8', 'font-size': 10, 'font-family': 'sans-serif' });
+    t0.textContent = '0'; svg.appendChild(t0);
+  }
+
+  // Y grid
+  for (let i = 0; i <= 5; i++) {
+    const val = minVal + (maxVal - minVal) * (1 - i / 5);
+    const y = yScale(val);
+    svg.appendChild(mkSvgEl('line', { x1: PAD_L, x2: PAD_L + chartW, y1: y, y2: y, stroke: '#E2E8F0', 'stroke-width': 1, 'stroke-dasharray': '4 3' }));
+    const t = mkSvgEl('text', { x: PAD_L - 6, y: y + 4, 'text-anchor': 'end', fill: '#64748B', 'font-size': 10, 'font-family': 'sans-serif' });
+    t.textContent = val.toFixed(1); svg.appendChild(t);
+  }
+  const yLbl = mkSvgEl('text', { x: 13, y: PAD_T + chartH / 2, 'text-anchor': 'middle', fill: '#94A3B8', 'font-size': 10, 'font-family': 'sans-serif', transform: `rotate(-90,13,${PAD_T + chartH / 2})` });
+  yLbl.textContent = 'Días'; svg.appendChild(yLbl);
+
+  // X labels — color claro explícito
+  visiblePeriodos.forEach((p, i) => {
+    const x = xScale(i);
+    svg.appendChild(mkSvgEl('line', { x1: x, x2: x, y1: PAD_T, y2: PAD_T + chartH + 5, stroke: '#E2E8F0', 'stroke-width': 1 }));
+    const t = mkSvgEl('text', { x, y: PAD_T + chartH + 16, 'text-anchor': 'end', fill: '#475569', 'font-size': 10, 'font-family': 'sans-serif', transform: `rotate(-38,${x},${PAD_T + chartH + 16})` });
+    t.textContent = formatPeriodoLabel(p); svg.appendChild(t);
+  });
+
+  const tooltip = getTiempoTooltip();
+
+  // Líneas + puntos interactivos
+  metricData.forEach(m => {
+    const valid = m.points.filter(p => p.avg !== null);
+    if (valid.length > 1) {
+      const areaD = valid.map((p, j) => {
+        const xi = visiblePeriodos.indexOf(p.period);
+        return (j === 0 ? `M${xScale(xi)},${yScale(p.avg)}` : `L${xScale(xi)},${yScale(p.avg)}`);
+      }).join(' ') + ` L${xScale(visiblePeriodos.indexOf(valid[valid.length-1].period))},${yScale(minVal < 0 ? 0 : minVal)} L${xScale(visiblePeriodos.indexOf(valid[0].period))},${yScale(minVal < 0 ? 0 : minVal)} Z`;
+      svg.appendChild(mkSvgEl('path', { d: areaD, fill: m.color, opacity: '0.06' }));
+      const lineD = valid.map((p, j) => {
+        const xi = visiblePeriodos.indexOf(p.period);
+        return (j === 0 ? 'M' : 'L') + `${xScale(xi)},${yScale(p.avg)}`;
+      }).join(' ');
+      svg.appendChild(mkSvgEl('path', { d: lineD, fill: 'none', stroke: m.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': m.dash }));
+    }
+
+    valid.forEach(p => {
+      const xi = visiblePeriodos.indexOf(p.period);
+      const cx = xScale(xi), cy = yScale(p.avg);
+
+      // Zona de hover más grande (invisible)
+      const hitArea = mkSvgEl('circle', { cx, cy, r: 16, fill: 'transparent', style: 'cursor:pointer' });
+      const dot     = mkSvgEl('circle', { cx, cy, r: 5, fill: '#FFFFFF', stroke: m.color, 'stroke-width': 2.5, style: 'pointer-events:none;transition:r 0.1s' });
+
+      hitArea.addEventListener('mouseenter', (e) => {
+        dot.setAttribute('r', 8);
+        const sign = p.avg >= 0 ? '+' : '';
+        tooltip.innerHTML = `
+          <div class="tiempo-tt-metric" style="color:${m.color}">${m.label}</div>
+          <div class="tiempo-tt-period">${formatPeriodoLabel(p.period)}</div>
+          <div class="tiempo-tt-value" style="color:${m.color}">${sign}${p.avg.toFixed(2)} <span>días</span></div>`;
+        tooltip.style.display = 'block';
+      });
+      hitArea.addEventListener('mousemove', (e) => {
+        const GAP = 14;
+        const ttW = tooltip.offsetWidth || 180;
+        const ttH = tooltip.offsetHeight || 80;
+        const vw  = window.innerWidth;
+        const vh  = window.innerHeight;
+        // Posición base: a la derecha del cursor
+        let tx = e.clientX + GAP;
+        let ty = e.clientY - ttH / 2;
+        // Si se sale por la derecha → abre hacia la izquierda
+        if (tx + ttW > vw - 8) tx = e.clientX - ttW - GAP;
+        // Si se sale por abajo o arriba
+        if (ty + ttH > vh - 8) ty = vh - ttH - 8;
+        if (ty < 8) ty = 8;
+        tooltip.style.left = (tx + window.scrollX) + 'px';
+        tooltip.style.top  = (ty + window.scrollY) + 'px';
+      });
+      hitArea.addEventListener('mouseleave', () => {
+        dot.setAttribute('r', 5);
+        tooltip.style.display = 'none';
+      });
+      svg.appendChild(hitArea);
+      svg.appendChild(dot);
+    });
+  });
+
+  // Leyenda centrada
+  const LEG_Y = PAD_T + chartH + PAD_B - LEG_H + 8;
+  const totalLegW = metricData.reduce((s, m) => s + m.label.length * 6.2 + 40, 0);
+  let lx = Math.max((W - totalLegW) / 2, PAD_L);
+  metricData.forEach(m => {
+    svg.appendChild(mkSvgEl('line', { x1: lx, x2: lx + 20, y1: LEG_Y, y2: LEG_Y, stroke: m.color, 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-dasharray': m.dash }));
+    svg.appendChild(mkSvgEl('circle', { cx: lx + 10, cy: LEG_Y, r: 4, fill: '#FFFFFF', stroke: m.color, 'stroke-width': 2 }));
+    const t = mkSvgEl('text', { x: lx + 26, y: LEG_Y + 4, fill: '#334155', 'font-size': 11, 'font-family': 'sans-serif' });
+    t.textContent = m.label; svg.appendChild(t);
+    lx += m.label.length * 6.2 + 40;
+  });
+
+  container.appendChild(svg);
+}
+
 function init() {
   clearStoredAuthToken();
   configureLoginView();
@@ -4885,6 +5292,29 @@ function init() {
   elements.jiraRefreshBtn.addEventListener("click", () => loadBoardIssues(jiraCurrentBoardId));
   elements.manualesRefreshBtn.addEventListener("click", () => loadManualesFlujos(true));
   elements.manualesTipoFilter.addEventListener("change", renderManualesList);
+
+  // Análisis de Tiempos listeners
+  const tiempoRefreshBtn = document.getElementById('tiempoRefreshBtn');
+  if (tiempoRefreshBtn) tiempoRefreshBtn.addEventListener('click', () => loadTiempoData(true));
+
+  const tiempoPeriodoSelect = document.getElementById('tiempoPeriodoSelect');
+  if (tiempoPeriodoSelect) tiempoPeriodoSelect.addEventListener('change', (e) => {
+    tiempoPeriodoFilter = e.target.value;
+    if (tiempoPeriodoFilter) { tiempoDesdeFilter = ''; tiempoHastaFilter = ''; }
+    renderTiempoSection();
+  });
+  const tiempoDesdeSelect = document.getElementById('tiempoDesdeSelect');
+  if (tiempoDesdeSelect) tiempoDesdeSelect.addEventListener('change', (e) => {
+    tiempoDesdeFilter = e.target.value;
+    if (tiempoDesdeFilter) { tiempoPeriodoFilter = ''; }
+    renderTiempoSection();
+  });
+  const tiempoHastaSelect = document.getElementById('tiempoHastaSelect');
+  if (tiempoHastaSelect) tiempoHastaSelect.addEventListener('change', (e) => {
+    tiempoHastaFilter = e.target.value;
+    if (tiempoHastaFilter) { tiempoPeriodoFilter = ''; }
+    renderTiempoSection();
+  });
   elements.manualesAreaFilter.addEventListener("change", renderManualesList);
   elements.manualesSearch.addEventListener("input", renderManualesList);
   elements.jiraBoardSelect.addEventListener("change", (e) => loadBoardIssues(e.target.value));

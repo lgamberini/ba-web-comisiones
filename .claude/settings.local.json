@@ -6,7 +6,8 @@
       "Bash(python3 gen_cronograma.py)",
       "Bash(python3 gen_comite.py)",
       "Bash(pip3 install *)",
-      "Bash(python3 gen_flujo_h.py)"
+      "Bash(python3 gen_flujo_h.py)",
+      "Bash(python3 gen_manual_web.py)"
     ]
   }
 }

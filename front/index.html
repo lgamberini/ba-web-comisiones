@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260527-12" />
+  <link rel="stylesheet" href="styles.css?v=20260709-7" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -85,6 +85,10 @@
         <button class="nav-item" data-section="resumen-avance">
           <span class="nav-icon">📑</span>
           <span class="nav-label">Seguimiento de Automatizaciones</span>
+        </button>
+        <button class="nav-item" data-section="analisis-tiempo">
+          <span class="nav-icon">⏳</span>
+          <span class="nav-label">Análisis de Tiempo</span>
         </button>
         <button class="nav-item" data-section="politicas">
           <span class="nav-icon">📘</span>
@@ -386,6 +390,62 @@
         </div>
       </section>
 
+      <!-- Sección: Análisis de Tiempos (doc-p) -->
+      <section id="analisis-tiempo-section" class="section">
+        <div class="tiempo-filters-row">
+          <div class="tiempo-chips-wrap" id="tiempoProductChips"></div>
+          <div class="tiempo-period-wrap">
+            <div class="tiempo-period-single">
+              <label for="tiempoPeriodoSelect">Periodo</label>
+              <select id="tiempoPeriodoSelect"><option value="">Todos los periodos</option></select>
+            </div>
+            <div class="tiempo-period-range">
+              <label for="tiempoDesdeSelect">Desde</label>
+              <select id="tiempoDesdeSelect"><option value="">—</option></select>
+              <label for="tiempoHastaSelect">Hasta</label>
+              <select id="tiempoHastaSelect"><option value="">—</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="tiempo-kpi-row" id="tiempoKpiRow"></div>
+        <div class="tiempo-chart-wrap">
+          <div id="tiempoStatus" class="status">Abre esta sección para cargar la información.</div>
+          <div id="tiempoChartContainer"></div>
+        </div>
+        <div class="tiempo-footer-row">
+          <button id="tiempoRefreshBtn" type="button" class="tiempo-refresh-btn">↺ Actualizar datos</button>
+        </div>
+        <div class="tiempo-legend-box">
+          <div class="tiempo-legend-title">Leyenda de indicadores</div>
+          <div class="tiempo-legend-items">
+            <div class="tiempo-legend-item">
+              <span class="tiempo-legend-line" style="background:#3B82F6"></span>
+              <div>
+                <strong>Doing → To Review</strong>
+                <p>Días desde que el esquema entra en trabajo activo (Doing) hasta que se envía a revisión (To Review).</p>
+              </div>
+            </div>
+            <div class="tiempo-legend-item">
+              <span class="tiempo-legend-line" style="background:#0D9488"></span>
+              <div>
+                <strong>To Review → Done</strong>
+                <p>Días desde que el esquema está en revisión hasta que se da por completado (Done).</p>
+              </div>
+            </div>
+            <div class="tiempo-legend-item">
+              <span class="tiempo-legend-line" style="background:#7C3AED;border-top:2px dashed #7C3AED;background:transparent"></span>
+              <div>
+                <strong>Margen envío Finanzas</strong>
+                <p>Diferencia entre la fecha límite de envío a Finanzas y la fecha real de envío.
+                  <span class="tiempo-legend-ok">Positivo = enviado antes del límite</span> ·
+                  <span class="tiempo-legend-err">Negativo = enviado con retraso</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Sección: Avance Comisiones (doc-a) - Resumen de cronograma de comisiones -->
       <section id="avance-comisiones-section" class="section">
         <section class="controls">
@@ -448,6 +508,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260527-6"></script>
+  <script src="app.js?v=20260709-7"></script>
 </body>
 </html>
