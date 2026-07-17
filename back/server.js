@@ -27,6 +27,7 @@ const SEGUIMIENTO_SPREADSHEET_ID = '1Cht8Pfy4W8XWFkZJP1Z3tEkHGztnjG4z4UnYmDQLAbs
 const GESTION_COMISIONES_SPREADSHEET_ID = '1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg'; // Spreadsheet gestión comisiones
 const MAESTRO_CENTRAL_SS_ID = '1Y0-JzexrJU51qvqGQs1Yw_0DxQ_CG3dxAkJld5yfvG8';
 const TIEMPO_SS_ID = '1QNFrx3D7FpwzgbkWFewZTWtjS0CHziP5bdMcx6JYN-8';
+const CALENDARIO_SHEET = 'CALENDARIO';
 
 // Hojas restringidas por spreadsheet - usuarios no pueden acceder a estas hojas
 const RESTRICTED_SHEETS_BY_SPREADSHEET = {
@@ -147,17 +148,18 @@ const SECTION_DICTIONARY = {
   'doc-m': 'jira',
   'doc-n': 'gestion-esquemas',
   'doc-o': 'manuales-flujos',
-  'doc-p': 'analisis-tiempo'
+  'doc-p': 'analisis-tiempo',
+  'doc-q': 'calendario'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
 const ROLE_DEFINITIONS = {
   administrador: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n', 'doc-o', 'doc-p'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-n', 'doc-o', 'doc-p', 'doc-q'],
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n', 'doc-o', 'doc-p'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-m', 'doc-n', 'doc-o', 'doc-p', 'doc-q'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -1485,6 +1487,152 @@ async function handleTiempoData(req, res) {
   }
 }
 
+// ── Calendario ────────────────────────────────────────────────────────────────
+
+async function handleCalendarioGet(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-q')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const response = await googleSheetsRequest(
+      `spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}/values/${encodeURIComponent(`'${CALENDARIO_SHEET}'!A:H`)}`,
+      { valueRenderOption: 'UNFORMATTED_VALUE' }
+    );
+    const rawValues = response.values || [];
+    if (rawValues.length < 2) {
+      sendJson(req, res, 200, { eventos: [] });
+      return;
+    }
+    const eventos = rawValues.slice(1).filter(r => r[0]).map(r => ({
+      id:          String(r[0] || ''),
+      titulo:      String(r[1] || ''),
+      fecha:       String(r[2] || ''),
+      tipo:        String(r[3] || 'otro'),
+      producto:    String(r[4] || ''),
+      recurrencia: String(r[5] || 'ninguna'),
+      diaMes:      r[6] !== undefined && r[6] !== '' ? Number(r[6]) : null,
+      notas:       String(r[7] || '')
+    }));
+    sendJson(req, res, 200, { eventos });
+  } catch (err) {
+    console.error('Error handleCalendarioGet:', err.message);
+    sendJson(req, res, 500, { error: IS_PRODUCTION ? 'Error interno del servidor.' : err.message });
+  }
+}
+
+async function handleCalendarioPost(req, res) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-q')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const body = await parseJsonBody(req);
+    const { titulo, fecha, tipo, producto, recurrencia, diaMes, notas } = body;
+    if (!titulo || !titulo.trim()) {
+      sendJson(req, res, 400, { error: 'El título es requerido.' });
+      return;
+    }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await googleSheetsAppend(
+      GESTION_COMISIONES_SPREADSHEET_ID,
+      `'${CALENDARIO_SHEET}'!A:H`,
+      [[id, titulo.trim(), fecha || '', tipo || 'otro', producto || '', recurrencia || 'ninguna', diaMes != null ? diaMes : '', notas || '']]
+    );
+    sendJson(req, res, 201, { id, titulo: titulo.trim(), fecha: fecha || '', tipo: tipo || 'otro', producto: producto || '', recurrencia: recurrencia || 'ninguna', diaMes: diaMes != null ? Number(diaMes) : null, notas: notas || '' });
+  } catch (err) {
+    console.error('Error handleCalendarioPost:', err.message);
+    sendJson(req, res, 500, { error: IS_PRODUCTION ? 'Error interno del servidor.' : err.message });
+  }
+}
+
+async function findCalendarioRow(id) {
+  const response = await googleSheetsRequest(
+    `spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}/values/${encodeURIComponent(`'${CALENDARIO_SHEET}'!A:A`)}`,
+    { valueRenderOption: 'UNFORMATTED_VALUE' }
+  );
+  const values = response.values || [];
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0] || '') === id) return i + 1;
+  }
+  return null;
+}
+
+async function handleCalendarioPut(req, res, id) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-q')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const body = await parseJsonBody(req);
+    const { titulo, fecha, tipo, producto, recurrencia, diaMes, notas } = body;
+    if (!titulo || !titulo.trim()) {
+      sendJson(req, res, 400, { error: 'El título es requerido.' });
+      return;
+    }
+    const rowNum = await findCalendarioRow(id);
+    if (!rowNum) {
+      sendJson(req, res, 404, { error: 'Evento no encontrado.' });
+      return;
+    }
+    await googleSheetsBatchUpdate(GESTION_COMISIONES_SPREADSHEET_ID, {
+      valueInputOption: 'RAW',
+      data: [{
+        range: `'${CALENDARIO_SHEET}'!A${rowNum}:H${rowNum}`,
+        values: [[id, titulo.trim(), fecha || '', tipo || 'otro', producto || '', recurrencia || 'ninguna', diaMes != null ? diaMes : '', notas || '']]
+      }]
+    });
+    sendJson(req, res, 200, { id, titulo: titulo.trim(), fecha: fecha || '', tipo: tipo || 'otro', producto: producto || '', recurrencia: recurrencia || 'ninguna', diaMes: diaMes != null ? Number(diaMes) : null, notas: notas || '' });
+  } catch (err) {
+    console.error('Error handleCalendarioPut:', err.message);
+    sendJson(req, res, 500, { error: IS_PRODUCTION ? 'Error interno del servidor.' : err.message });
+  }
+}
+
+async function handleCalendarioDelete(req, res, id) {
+  const auth = authenticateRequest(req, res);
+  if (!auth) return;
+  if (!auth.user.allowedSections.includes('doc-q')) {
+    sendJson(req, res, 403, { error: 'Sin permisos.' });
+    return;
+  }
+  try {
+    const rowNum = await findCalendarioRow(id);
+    if (!rowNum) {
+      sendJson(req, res, 404, { error: 'Evento no encontrado.' });
+      return;
+    }
+    const spreadsheetMeta = await googleSheetsRequest(`spreadsheets/${GESTION_COMISIONES_SPREADSHEET_ID}`);
+    const sheet = spreadsheetMeta.sheets.find(s => s.properties.title === CALENDARIO_SHEET);
+    if (!sheet) {
+      sendJson(req, res, 500, { error: 'Hoja CALENDARIO no encontrada.' });
+      return;
+    }
+    await googleSheetsSpreadsheetBatchUpdate(GESTION_COMISIONES_SPREADSHEET_ID, {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId: sheet.properties.sheetId,
+            dimension: 'ROWS',
+            startIndex: rowNum - 1,
+            endIndex: rowNum
+          }
+        }
+      }]
+    });
+    sendJson(req, res, 200, { ok: true });
+  } catch (err) {
+    console.error('Error handleCalendarioDelete:', err.message);
+    sendJson(req, res, 500, { error: IS_PRODUCTION ? 'Error interno del servidor.' : err.message });
+  }
+}
+
 async function handleEsquemasComisionales(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
@@ -2403,6 +2551,28 @@ async function requestHandler(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/run-script') {
       await handleRunScript(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/eventos') {
+      await handleCalendarioGet(req, res);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/eventos') {
+      await handleCalendarioPost(req, res);
+      return;
+    }
+
+    if (req.method === 'PUT' && url.pathname.startsWith('/api/eventos/')) {
+      const eventoId = url.pathname.slice('/api/eventos/'.length);
+      await handleCalendarioPut(req, res, eventoId);
+      return;
+    }
+
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/eventos/')) {
+      const eventoId = url.pathname.slice('/api/eventos/'.length);
+      await handleCalendarioDelete(req, res, eventoId);
       return;
     }
 

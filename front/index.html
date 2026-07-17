@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260709-7" />
+  <link rel="stylesheet" href="styles.css?v=20260716-1" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -89,6 +89,10 @@
         <button class="nav-item" data-section="analisis-tiempo">
           <span class="nav-icon">⏳</span>
           <span class="nav-label">Análisis de Tiempo</span>
+        </button>
+        <button class="nav-item" data-section="calendario">
+          <span class="nav-icon">📅</span>
+          <span class="nav-label">Calendario</span>
         </button>
         <button class="nav-item" data-section="politicas">
           <span class="nav-icon">📘</span>
@@ -446,6 +450,88 @@
         </div>
       </section>
 
+      <!-- Sección: Calendario (doc-q) -->
+      <section id="calendario-section" class="section">
+        <div class="cal-header">
+          <button class="cal-nav-btn" id="calPrevBtn">&#8249;</button>
+          <h2 class="cal-month-title" id="calMonthTitle"></h2>
+          <button class="cal-nav-btn" id="calNextBtn">&#8250;</button>
+          <button class="cal-add-btn" id="calAddEventBtn">+ Agregar evento</button>
+        </div>
+        <div id="calStatus" class="status" style="display:none"></div>
+        <div class="cal-grid-wrap" id="calGridWrap">
+          <div class="cal-grid" id="calGrid"></div>
+        </div>
+
+        <div class="cal-legend">
+          <div class="cal-legend-title">Tipos de evento</div>
+          <div class="cal-legend-items">
+            <span class="cal-legend-dot" style="background:#1D4ED8"></span><span class="cal-legend-label">Pago</span>
+            <span class="cal-legend-dot" style="background:#16A34A"></span><span class="cal-legend-label">Meta</span>
+            <span class="cal-legend-dot" style="background:#D97706"></span><span class="cal-legend-label">Reunión</span>
+            <span class="cal-legend-dot" style="background:#6B7280"></span><span class="cal-legend-label">Otro</span>
+            <span class="cal-legend-sep"></span>
+            <span class="cal-legend-recur">↺</span><span class="cal-legend-label">Recurrente mensual</span>
+          </div>
+        </div>
+
+        <!-- Modal crear/editar evento -->
+        <div id="calEventModal" class="cal-modal-overlay" style="display:none">
+          <div class="cal-modal">
+            <div class="cal-modal-header">
+              <span id="calModalTitle">Nuevo Evento</span>
+              <button class="cal-modal-close" id="calModalClose">&times;</button>
+            </div>
+            <div class="cal-modal-body">
+              <div class="cal-form-row">
+                <label for="calEvtTitulo">Título *</label>
+                <input type="text" id="calEvtTitulo" placeholder="Nombre del evento" />
+              </div>
+              <div class="cal-form-row">
+                <label for="calEvtFecha">Fecha</label>
+                <input type="date" id="calEvtFecha" />
+              </div>
+              <div class="cal-form-row">
+                <label for="calEvtTipo">Tipo</label>
+                <select id="calEvtTipo">
+                  <option value="pago">Pago</option>
+                  <option value="meta">Meta</option>
+                  <option value="reunion">Reunión</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div class="cal-form-row">
+                <label for="calEvtProducto">Producto</label>
+                <input type="text" id="calEvtProducto" placeholder="Ej: Préstamos" />
+              </div>
+              <div class="cal-form-row">
+                <label for="calEvtRecurrencia">Recurrencia</label>
+                <select id="calEvtRecurrencia">
+                  <option value="ninguna">Sin recurrencia</option>
+                  <option value="mensual">Mensual (mismo día cada mes)</option>
+                </select>
+              </div>
+              <div class="cal-form-row" id="calEvtDiaMesRow" style="display:none">
+                <label for="calEvtDiaMes">Día del mes</label>
+                <input type="number" id="calEvtDiaMes" min="1" max="31" placeholder="Ej: 13" />
+              </div>
+              <div class="cal-form-row">
+                <label for="calEvtNotas">Notas</label>
+                <textarea id="calEvtNotas" rows="3" placeholder="Notas adicionales..."></textarea>
+              </div>
+            </div>
+            <div id="calModalStatus" class="cal-modal-status"></div>
+            <div class="cal-modal-footer">
+              <button id="calModalDeleteBtn" class="cal-btn-delete" style="display:none">Eliminar</button>
+              <div class="cal-modal-actions">
+                <button id="calModalCancelBtn" class="cal-btn-cancel">Cancelar</button>
+                <button id="calModalSaveBtn" class="cal-btn-save">Guardar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Sección: Avance Comisiones (doc-a) - Resumen de cronograma de comisiones -->
       <section id="avance-comisiones-section" class="section">
         <section class="controls">
@@ -508,6 +594,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260709-7"></script>
+  <script src="app.js?v=20260716-1"></script>
 </body>
 </html>

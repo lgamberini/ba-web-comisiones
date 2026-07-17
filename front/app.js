@@ -71,7 +71,8 @@ const sectionDictionary = {
   'doc-m': 'jira',
   'doc-n': 'gestion-esquemas',
   'doc-o': 'manuales-flujos',
-  'doc-p': 'analisis-tiempo'
+  'doc-p': 'analisis-tiempo',
+  'doc-q': 'calendario'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -4382,6 +4383,9 @@ function changeSection(sectionId) {
   if (sectionId === 'analisis-tiempo') {
     loadTiempoData();
   }
+  if (sectionId === 'calendario') {
+    loadCalendario();
+  }
 }
 
 // ── Manuales / Flujos ─────────────────────────────────────────────────────────
@@ -5230,6 +5234,241 @@ function renderTiempoLineChart(container, rows, visiblePeriodos, products) {
   container.appendChild(svg);
 }
 
+// ── Calendario ────────────────────────────────────────────────────────────────
+
+const CAL_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const CAL_DIAS  = ['Lu','Ma','Mi','Ju','Vi','Sa','Do'];
+const CAL_TIPO_COLOR = { pago: '#1D4ED8', meta: '#16A34A', reunion: '#D97706', otro: '#6B7280' };
+
+let calEventos      = [];
+let calCurrentYear  = new Date().getFullYear();
+let calCurrentMonth = new Date().getMonth();
+let calEditingId    = null;
+
+function calGetEventsForDay(year, month, day) {
+  const dateStr = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  return calEventos.filter(ev => {
+    if (ev.recurrencia === 'mensual' && ev.diaMes === day) return true;
+    if (ev.fecha === dateStr) return true;
+    return false;
+  });
+}
+
+async function loadCalendario(forceRefresh = false) {
+  if (!hasAccessToSection('calendario')) return;
+  if (!forceRefresh && calEventos.length) { renderCalendario(); return; }
+  const status = document.getElementById('calStatus');
+  if (!status) return;
+  status.textContent = 'Cargando...';
+  status.style.color = '';
+  status.style.display = 'block';
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/eventos`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al cargar');
+    calEventos = data.eventos || [];
+    status.style.display = 'none';
+    renderCalendario();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = '#991b1b';
+  }
+}
+
+function renderCalendario() {
+  const titleEl = document.getElementById('calMonthTitle');
+  const grid    = document.getElementById('calGrid');
+  if (!titleEl || !grid) return;
+
+  titleEl.textContent = `${CAL_MESES[calCurrentMonth]} ${calCurrentYear}`;
+
+  const today  = new Date();
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth();
+  const todayD = today.getDate();
+
+  const firstDow   = new Date(calCurrentYear, calCurrentMonth, 1).getDay();
+  const offsetMon  = (firstDow + 6) % 7;
+  const daysInMonth = new Date(calCurrentYear, calCurrentMonth + 1, 0).getDate();
+
+  let html = CAL_DIAS.map(d => `<div class="cal-day-header">${d}</div>`).join('');
+
+  for (let i = 0; i < offsetMon; i++) {
+    html += `<div class="cal-day-cell cal-day-empty"></div>`;
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = (calCurrentYear === todayY && calCurrentMonth === todayM && d === todayD);
+    const dateStr = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const events  = calGetEventsForDay(calCurrentYear, calCurrentMonth, d);
+
+    const evHtml = events.map(ev => {
+      const color = CAL_TIPO_COLOR[ev.tipo] || '#6B7280';
+      const lbl   = ev.recurrencia === 'mensual' ? `↺ ${ev.titulo}` : ev.titulo;
+      return `<span class="cal-event-chip" style="background:${color}" data-cal-id="${ev.id}" title="${escHtml(ev.notas || ev.titulo)}">${escHtml(lbl)}</span>`;
+    }).join('');
+
+    html += `<div class="cal-day-cell${isToday ? ' cal-day-today' : ''}" data-cal-date="${dateStr}">
+      <div class="cal-day-num${isToday ? ' is-today' : ''}">${d}</div>
+      ${evHtml}
+    </div>`;
+  }
+
+  const totalCells = offsetMon + daysInMonth;
+  const remainder  = totalCells % 7;
+  if (remainder !== 0) {
+    for (let i = 0; i < 7 - remainder; i++) {
+      html += `<div class="cal-day-cell cal-day-empty"></div>`;
+    }
+  }
+
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.cal-event-chip').forEach(chip => {
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      openCalModal({ id: chip.dataset.calId });
+    });
+  });
+
+  grid.querySelectorAll('.cal-day-cell:not(.cal-day-empty)').forEach(cell => {
+    cell.addEventListener('click', () => {
+      openCalModal({ fecha: cell.dataset.calDate });
+    });
+  });
+}
+
+function openCalModal({ id = null, fecha = '' } = {}) {
+  calEditingId = id;
+  const modal     = document.getElementById('calEventModal');
+  const titleEl   = document.getElementById('calModalTitle');
+  const deleteBtn = document.getElementById('calModalDeleteBtn');
+  const saveBtn   = document.getElementById('calModalSaveBtn');
+  const status    = document.getElementById('calModalStatus');
+
+  status.textContent = '';
+  saveBtn.disabled   = false;
+  deleteBtn.disabled = false;
+
+  if (id) {
+    const ev = calEventos.find(e => e.id === id);
+    if (!ev) return;
+    titleEl.textContent = 'Editar Evento';
+    document.getElementById('calEvtTitulo').value     = ev.titulo;
+    document.getElementById('calEvtFecha').value      = ev.fecha;
+    document.getElementById('calEvtTipo').value       = ev.tipo || 'otro';
+    document.getElementById('calEvtProducto').value   = ev.producto;
+    document.getElementById('calEvtRecurrencia').value = ev.recurrencia || 'ninguna';
+    document.getElementById('calEvtDiaMes').value     = ev.diaMes != null ? ev.diaMes : '';
+    document.getElementById('calEvtNotas').value      = ev.notas;
+    document.getElementById('calEvtDiaMesRow').style.display = ev.recurrencia === 'mensual' ? '' : 'none';
+    deleteBtn.style.display = '';
+  } else {
+    titleEl.textContent = 'Nuevo Evento';
+    document.getElementById('calEvtTitulo').value     = '';
+    document.getElementById('calEvtFecha').value      = fecha;
+    document.getElementById('calEvtTipo').value       = 'otro';
+    document.getElementById('calEvtProducto').value   = '';
+    document.getElementById('calEvtRecurrencia').value = 'ninguna';
+    document.getElementById('calEvtDiaMes').value     = '';
+    document.getElementById('calEvtNotas').value      = '';
+    document.getElementById('calEvtDiaMesRow').style.display = 'none';
+    deleteBtn.style.display = 'none';
+  }
+
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('calEvtTitulo').focus(), 50);
+}
+
+function closeCalModal() {
+  document.getElementById('calEventModal').style.display = 'none';
+  calEditingId = null;
+}
+
+async function saveCalEvento() {
+  const saveBtn = document.getElementById('calModalSaveBtn');
+  const status  = document.getElementById('calModalStatus');
+  const titulo  = document.getElementById('calEvtTitulo').value.trim();
+  const fecha   = document.getElementById('calEvtFecha').value;
+  const tipo    = document.getElementById('calEvtTipo').value;
+  const producto     = document.getElementById('calEvtProducto').value.trim();
+  const recurrencia  = document.getElementById('calEvtRecurrencia').value;
+  const diaMesRaw    = document.getElementById('calEvtDiaMes').value;
+  const diaMes       = recurrencia === 'mensual' && diaMesRaw ? Number(diaMesRaw) : null;
+  const notas        = document.getElementById('calEvtNotas').value.trim();
+
+  if (!titulo) {
+    status.textContent = 'El título es requerido.';
+    status.style.color = '#991b1b';
+    return;
+  }
+
+  status.textContent = 'Guardando...';
+  status.style.color = '#64748B';
+  saveBtn.disabled = true;
+
+  try {
+    const payload = { titulo, fecha, tipo, producto, recurrencia, diaMes, notas };
+    let res;
+    if (calEditingId) {
+      res = await authFetch(`${API_BASE_URL}/api/eventos/${calEditingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      res = await authFetch(`${API_BASE_URL}/api/eventos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al guardar');
+
+    if (calEditingId) {
+      const idx = calEventos.findIndex(e => e.id === calEditingId);
+      if (idx !== -1) calEventos[idx] = data;
+    } else {
+      calEventos.push(data);
+    }
+
+    closeCalModal();
+    renderCalendario();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = '#991b1b';
+    saveBtn.disabled = false;
+  }
+}
+
+async function deleteCalEvento() {
+  if (!calEditingId) return;
+  const status    = document.getElementById('calModalStatus');
+  const deleteBtn = document.getElementById('calModalDeleteBtn');
+
+  if (!confirm('¿Eliminar este evento?')) return;
+
+  status.textContent = 'Eliminando...';
+  status.style.color = '#64748B';
+  deleteBtn.disabled = true;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/eventos/${calEditingId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Error al eliminar');
+    }
+    calEventos = calEventos.filter(e => e.id !== calEditingId);
+    closeCalModal();
+    renderCalendario();
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = '#991b1b';
+    deleteBtn.disabled = false;
+  }
+}
+
 function init() {
   clearStoredAuthToken();
   configureLoginView();
@@ -5333,6 +5572,37 @@ function init() {
     elements.jiraTokenStatus.textContent = '';
     elements.jiraGuardarBtn.disabled = false;
   });
+  // Calendario listeners
+  const calPrevBtn = document.getElementById('calPrevBtn');
+  if (calPrevBtn) calPrevBtn.addEventListener('click', () => {
+    calCurrentMonth--;
+    if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; }
+    renderCalendario();
+  });
+  const calNextBtn = document.getElementById('calNextBtn');
+  if (calNextBtn) calNextBtn.addEventListener('click', () => {
+    calCurrentMonth++;
+    if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; }
+    renderCalendario();
+  });
+  const calAddEventBtn = document.getElementById('calAddEventBtn');
+  if (calAddEventBtn) calAddEventBtn.addEventListener('click', () => openCalModal({}));
+  const calModalClose = document.getElementById('calModalClose');
+  if (calModalClose) calModalClose.addEventListener('click', closeCalModal);
+  const calModalCancelBtn = document.getElementById('calModalCancelBtn');
+  if (calModalCancelBtn) calModalCancelBtn.addEventListener('click', closeCalModal);
+  const calModalSaveBtn = document.getElementById('calModalSaveBtn');
+  if (calModalSaveBtn) calModalSaveBtn.addEventListener('click', saveCalEvento);
+  const calModalDeleteBtn = document.getElementById('calModalDeleteBtn');
+  if (calModalDeleteBtn) calModalDeleteBtn.addEventListener('click', deleteCalEvento);
+  const calEvtRecurrencia = document.getElementById('calEvtRecurrencia');
+  if (calEvtRecurrencia) calEvtRecurrencia.addEventListener('change', () => {
+    document.getElementById('calEvtDiaMesRow').style.display =
+      calEvtRecurrencia.value === 'mensual' ? '' : 'none';
+  });
+  const calEventModal = document.getElementById('calEventModal');
+  if (calEventModal) calEventModal.addEventListener('click', e => { if (e.target === calEventModal) closeCalModal(); });
+
   window.addEventListener("beforeunload", () => clearInterval(autoRefreshId));
 
   // Agregar navegación por secciones
