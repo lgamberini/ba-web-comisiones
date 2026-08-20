@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260716-1" />
+  <link rel="stylesheet" href="styles.css?v=20260820-1" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -471,7 +471,7 @@
             <span class="cal-legend-dot" style="background:#D97706"></span><span class="cal-legend-label">Reunión</span>
             <span class="cal-legend-dot" style="background:#6B7280"></span><span class="cal-legend-label">Otro</span>
             <span class="cal-legend-sep"></span>
-            <span class="cal-legend-recur">↺</span><span class="cal-legend-label">Recurrente mensual</span>
+            <span class="cal-legend-recur">↺</span><span class="cal-legend-label">Recurrente</span>
           </div>
         </div>
 
@@ -509,11 +509,25 @@
                 <select id="calEvtRecurrencia">
                   <option value="ninguna">Sin recurrencia</option>
                   <option value="mensual">Mensual (mismo día cada mes)</option>
+                  <option value="semanal">Semanal (mismo día cada semana)</option>
+                  <option value="trimestral">Trimestral (cada 3 meses)</option>
                 </select>
               </div>
               <div class="cal-form-row" id="calEvtDiaMesRow" style="display:none">
                 <label for="calEvtDiaMes">Día del mes</label>
                 <input type="number" id="calEvtDiaMes" min="1" max="31" placeholder="Ej: 13" />
+              </div>
+              <div class="cal-form-row" id="calEvtDiaSemanRow" style="display:none">
+                <label for="calEvtDiaSeman">Día de la semana</label>
+                <select id="calEvtDiaSeman">
+                  <option value="0">Lunes</option>
+                  <option value="1">Martes</option>
+                  <option value="2">Miércoles</option>
+                  <option value="3">Jueves</option>
+                  <option value="4">Viernes</option>
+                  <option value="5">Sábado</option>
+                  <option value="6">Domingo</option>
+                </select>
               </div>
               <div class="cal-form-row">
                 <label for="calEvtNotas">Notas</label>
@@ -594,6 +608,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260716-1"></script>
+  <script src="app.js?v=20260820-1"></script>
 </body>
 </html>

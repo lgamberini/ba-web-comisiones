@@ -78,6 +78,10 @@ WEB_COMISIONES/
    - `/api/correo-esquemas` - Listar esquemas para correo
    - `/api/correo-validate` - Validar datos de correo
    - `/api/run-script` - Ejecutar automatizaciones
+   - `/api/eventos` (GET) - Listar eventos del calendario
+   - `/api/eventos` (POST) - Crear nuevo evento
+   - `/api/eventos/:id` (PUT) - Editar evento existente
+   - `/api/eventos/:id` (DELETE) - Eliminar evento
 
 5. **Seguridad**
    - CORS configurado con orígenes permitidos
@@ -143,6 +147,8 @@ WEB_COMISIONES/
    - Links de Interés (`#links-interes-section`)
    - Organigrama Comisional (`#organigrama-section`)
    - Organigrama BA (`#organigrama-ba-section`)
+   - Análisis de Tiempo (`#analisis-tiempo-section`)
+   - Calendario de Comisiones (`#calendario-section`)
 
 **Recursos externos**:
 - Google Sign-In (accounts.google.com)
@@ -322,6 +328,8 @@ node scripts/dev-local.js
 | doc-j (Organigrama) | ✓ | ✓ | ✓ |
 | doc-k (Organigrama BA) | ✓ | ✓ | ✗ |
 | doc-l (Generador Correos) | ✗ | ✓ | ✗ |
+| doc-p (Análisis de Tiempo) | ✓ | ✓ | ✗ |
+| doc-q (Calendario) | ✓ | ✓ | ✗ |
 | Edición de hojas | ✗ | ✓ | ✗ |
 
 ---
@@ -394,7 +402,118 @@ Pasos para agregar una nueva sección:
 
 ---
 
-## 9. Notas de Desarrollo
+## 9. Módulo: Calendario de Comisiones
+
+### 9.1 Descripción general
+
+El módulo **Calendario** (`doc-q`) permite registrar y visualizar fechas clave relacionadas con el proceso de comisiones: pagos, envío de metas, reuniones y otros hitos. Se muestra como una vista mensual con navegación entre meses y soporte para eventos recurrentes.
+
+**Acceso en la aplicación:** sidebar → botón 📅 **Calendario** (visible para roles `administrador` y `administrador_editor`).
+
+---
+
+### 9.2 Ubicación de datos en Google Drive
+
+Los eventos se almacenan en la hoja `CALENDARIO` del spreadsheet **INFORMACION COMISIONES**:
+
+| Campo | Descripción |
+|---|---|
+| Google Drive | `BUSINESS ANALYTICS / OTROS / COMISIONES / DOCUMENTACION` |
+| Spreadsheet | **INFORMACION COMISIONES** |
+| ID del spreadsheet | `1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg` |
+| Hoja | `CALENDARIO` |
+
+**Estructura de columnas de la hoja `CALENDARIO`:**
+
+| Columna | Campo | Descripción |
+|---------|-------|-------------|
+| A | ID | Identificador único generado automáticamente |
+| B | TITULO | Nombre del evento |
+| C | FECHA | Fecha en formato `YYYY-MM-DD` (para eventos únicos) |
+| D | TIPO | `pago` / `meta` / `reunion` / `otro` |
+| E | PRODUCTO | Producto al que aplica (puede estar vacío = todos) |
+| F | RECURRENCIA | `ninguna` / `mensual` |
+| G | DIA_MES | Día del mes para eventos con recurrencia mensual (ej: `13`) |
+| H | NOTAS | Notas adicionales |
+
+> **Nota:** Para los pagos fijos del 13 y 19 de cada mes, usar `RECURRENCIA = mensual` con `DIA_MES = 13` o `19` y dejar `FECHA` vacío.
+
+---
+
+### 9.3 Tipos de evento y colores
+
+| Tipo | Color | Uso |
+|------|-------|-----|
+| `pago` | 🔵 Azul `#1D4ED8` | Pagos de comisiones (13 y 19 de cada mes) |
+| `meta` | 🟢 Verde `#16A34A` | Envío de metas y objetivos |
+| `reunion` | 🟡 Ámbar `#D97706` | Reuniones relacionadas a comisiones |
+| `otro` | ⚫ Gris `#6B7280` | Otros hitos o recordatorios |
+
+Los eventos con `RECURRENCIA = mensual` se muestran con el prefijo ↺ en el calendario.
+
+---
+
+### 9.4 Funcionalidades
+
+**Vista mensual:**
+- Navegación entre meses con botones `‹` y `›`
+- El día actual se resalta con un círculo azul
+- Clic en una celda de día → abre modal para crear evento en esa fecha
+- Clic en un chip de evento → abre modal para editar o eliminar
+
+**Modal de creación / edición:**
+- Campos: Título (obligatorio), Fecha, Tipo, Producto, Recurrencia, Día del mes (solo si recurrencia = mensual), Notas
+- El campo **Día del mes** aparece únicamente cuando se selecciona recurrencia mensual
+- El botón **Eliminar** solo aparece en modo edición
+
+**Leyenda:** debajo del calendario se muestra la referencia de colores por tipo y el símbolo ↺ para recurrentes.
+
+---
+
+### 9.5 API del módulo
+
+| Método | Endpoint | Descripción | Permiso requerido |
+|--------|----------|-------------|-------------------|
+| GET | `/api/eventos` | Obtiene todos los eventos | `doc-q` |
+| POST | `/api/eventos` | Crea un nuevo evento | `doc-q` |
+| PUT | `/api/eventos/:id` | Actualiza un evento existente | `doc-q` |
+| DELETE | `/api/eventos/:id` | Elimina un evento | `doc-q` |
+
+El ID de cada evento se genera en el backend al momento de creación como una cadena alfanumérica única basada en `Date.now()`.
+
+---
+
+### 9.6 Notificaciones a Google Chat (Apps Script)
+
+Se configuró un script en Google Apps Script para enviar alertas al chat del equipo sobre eventos próximos.
+
+**Archivo:** Apps Script vinculado al spreadsheet **INFORMACION COMISIONES**
+**Función:** `enviarNotificacionesCalendario()`
+**Trigger:** Temporizador diario (recomendado: 8–9 am)
+
+**Lógica de notificación:**
+- 🔴 **HOY** — eventos que vencen el día de ejecución
+- 🟠 **MAÑANA** — eventos que vencen al día siguiente
+- 🟡 **EN 2 DÍAS** — eventos con 2 días de anticipación
+- Si no hay eventos en ese rango, el script no envía mensaje (sin spam)
+
+**Consideración técnica:** las fechas se parsean por partes (`new Date(año, mes-1, dia)`) para evitar el desfase UTC que ocurre al construir una fecha desde un string `YYYY-MM-DD` directamente.
+
+**Variables a configurar en el script:**
+```javascript
+const WEBHOOK_URL = 'URL del webhook de Google Chat';
+const SHEET_NAME  = 'CALENDARIO';
+```
+
+**Cómo obtener el webhook de Google Chat:**
+1. Abrir el Space de Google Chat del equipo
+2. Clic en el nombre del space → **Apps y integraciones → Webhooks**
+3. **Agregar webhook** → asignar nombre y avatar opcional
+4. Copiar la URL generada
+
+---
+
+## 10. Notas de Desarrollo
 
 - El servidor usa Node.js nativo (http module), no Express aunque esté en dependencies
 - Frontend es estático, se sirve desde `back/server.js` apuntando a `front/`
@@ -404,4 +523,4 @@ Pasos para agregar una nueva sección:
 
 ---
 
-*Documentación generada automáticamente*
+*Última actualización: julio 2026 — incluye módulos Análisis de Tiempo y Calendario de Comisiones*

@@ -5249,6 +5249,15 @@ function calGetEventsForDay(year, month, day) {
   const dateStr = `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   return calEventos.filter(ev => {
     if (ev.recurrencia === 'mensual' && ev.diaMes === day) return true;
+    if (ev.recurrencia === 'semanal') {
+      const dow = (new Date(year, month, day).getDay() + 6) % 7; // 0=Lunes…6=Domingo
+      return ev.diaMes === dow;
+    }
+    if (ev.recurrencia === 'trimestral' && ev.diaMes === day) {
+      const partes = ev.fecha.split('-').map(Number);
+      const diff = (year - partes[0]) * 12 + (month - (partes[1] - 1));
+      return diff >= 0 && diff % 3 === 0;
+    }
     if (ev.fecha === dateStr) return true;
     return false;
   });
@@ -5304,7 +5313,7 @@ function renderCalendario() {
 
     const evHtml = events.map(ev => {
       const color = CAL_TIPO_COLOR[ev.tipo] || '#6B7280';
-      const lbl   = ev.recurrencia === 'mensual' ? `↺ ${ev.titulo}` : ev.titulo;
+      const lbl   = ['mensual','semanal','trimestral'].includes(ev.recurrencia) ? `↺ ${ev.titulo}` : ev.titulo;
       return `<span class="cal-event-chip" style="background:${color}" data-cal-id="${ev.id}" title="${escHtml(ev.notas || ev.titulo)}">${escHtml(lbl)}</span>`;
     }).join('');
 
@@ -5358,10 +5367,13 @@ function openCalModal({ id = null, fecha = '' } = {}) {
     document.getElementById('calEvtFecha').value      = ev.fecha;
     document.getElementById('calEvtTipo').value       = ev.tipo || 'otro';
     document.getElementById('calEvtProducto').value   = ev.producto;
-    document.getElementById('calEvtRecurrencia').value = ev.recurrencia || 'ninguna';
-    document.getElementById('calEvtDiaMes').value     = ev.diaMes != null ? ev.diaMes : '';
+    const rec = ev.recurrencia || 'ninguna';
+    document.getElementById('calEvtRecurrencia').value = rec;
     document.getElementById('calEvtNotas').value      = ev.notas;
-    document.getElementById('calEvtDiaMesRow').style.display = ev.recurrencia === 'mensual' ? '' : 'none';
+    document.getElementById('calEvtDiaMesRow').style.display  = ['mensual','trimestral'].includes(rec) ? '' : 'none';
+    document.getElementById('calEvtDiaSemanRow').style.display = rec === 'semanal' ? '' : 'none';
+    document.getElementById('calEvtDiaMes').value   = ['mensual','trimestral'].includes(rec) && ev.diaMes != null ? ev.diaMes : '';
+    document.getElementById('calEvtDiaSeman').value = rec === 'semanal' && ev.diaMes != null ? String(ev.diaMes) : '0';
     deleteBtn.style.display = '';
   } else {
     titleEl.textContent = 'Nuevo Evento';
@@ -5370,9 +5382,11 @@ function openCalModal({ id = null, fecha = '' } = {}) {
     document.getElementById('calEvtTipo').value       = 'otro';
     document.getElementById('calEvtProducto').value   = '';
     document.getElementById('calEvtRecurrencia').value = 'ninguna';
-    document.getElementById('calEvtDiaMes').value     = '';
-    document.getElementById('calEvtNotas').value      = '';
-    document.getElementById('calEvtDiaMesRow').style.display = 'none';
+    document.getElementById('calEvtDiaMes').value      = '';
+    document.getElementById('calEvtDiaSeman').value    = '0';
+    document.getElementById('calEvtNotas').value       = '';
+    document.getElementById('calEvtDiaMesRow').style.display  = 'none';
+    document.getElementById('calEvtDiaSemanRow').style.display = 'none';
     deleteBtn.style.display = 'none';
   }
 
@@ -5393,8 +5407,13 @@ async function saveCalEvento() {
   const tipo    = document.getElementById('calEvtTipo').value;
   const producto     = document.getElementById('calEvtProducto').value.trim();
   const recurrencia  = document.getElementById('calEvtRecurrencia').value;
-  const diaMesRaw    = document.getElementById('calEvtDiaMes').value;
-  const diaMes       = recurrencia === 'mensual' && diaMesRaw ? Number(diaMesRaw) : null;
+  let diaMes = null;
+  if (recurrencia === 'mensual' || recurrencia === 'trimestral') {
+    const v = document.getElementById('calEvtDiaMes').value;
+    diaMes = v ? Number(v) : null;
+  } else if (recurrencia === 'semanal') {
+    diaMes = Number(document.getElementById('calEvtDiaSeman').value);
+  }
   const notas        = document.getElementById('calEvtNotas').value.trim();
 
   if (!titulo) {
@@ -5597,8 +5616,9 @@ function init() {
   if (calModalDeleteBtn) calModalDeleteBtn.addEventListener('click', deleteCalEvento);
   const calEvtRecurrencia = document.getElementById('calEvtRecurrencia');
   if (calEvtRecurrencia) calEvtRecurrencia.addEventListener('change', () => {
-    document.getElementById('calEvtDiaMesRow').style.display =
-      calEvtRecurrencia.value === 'mensual' ? '' : 'none';
+    const v = calEvtRecurrencia.value;
+    document.getElementById('calEvtDiaMesRow').style.display  = ['mensual','trimestral'].includes(v) ? '' : 'none';
+    document.getElementById('calEvtDiaSemanRow').style.display = v === 'semanal' ? '' : 'none';
   });
   const calEventModal = document.getElementById('calEventModal');
   if (calEventModal) calEventModal.addEventListener('click', e => { if (e.target === calEventModal) closeCalModal(); });

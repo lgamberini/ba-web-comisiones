@@ -1073,7 +1073,7 @@ function setCorsHeaders(req, res) {
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
@@ -2444,8 +2444,8 @@ async function requestHandler(req, res) {
 
   setCorsHeaders(req, res);
 
-  // Solo permite métodos GET, POST y OPTIONS
-  if (!['GET', 'POST', 'OPTIONS'].includes(req.method)) {
+  // Solo permite métodos permitidos
+  if (!['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'].includes(req.method)) {
     sendText(req, res, 405, 'Método no permitido');
     return;
   }
