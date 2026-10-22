@@ -75,3 +75,35 @@ Los cambios en Apps Script se publican como una versión nueva de la implementac
 | `GOOGLE_ROLE_EMAILS_JSON` | Objeto JSON que asigna a cada rol una lista de correos de Google |
 
 Los secretos de producción se cargan en las variables de entorno de Render, no en `.env.render`, que es solo una plantilla de referencia.
+
+## Forma de trabajo
+
+- Toda la documentación y las respuestas van en español.
+- Si hay dudas sobre el alcance o la lógica de negocio, se consulta antes de cambiar código.
+- El push a GitHub se hace a mano desde la terminal del equipo. Desde las sesiones de Claude Code el push da 403, porque la cuenta autenticada en la máquina (`LucianaGamberini`) no tiene permiso de escritura sobre `lgamberini/ba-web-comisiones`. Se deja el commit hecho, o los cambios en stage si así se pide.
+- No hay tests: los cambios en `apps-script/` se verifican con simulaciones en Node (con objetos falsos de `SpreadsheetApp`) en el scratchpad, y después se prueban en Apps Script.
+
+## Generador de Consolidado: decisiones tomadas
+
+Detalle funcional completo en `PROJECT_DOCUMENTATION.md`, sección 11. Lo que no se deduce del código:
+
+- **Por qué existe:** reemplaza el flujo manual, que consistía en correr `generarConsolidadoKPI()` en cada plantilla, copiarla a la carpeta "COMISIONES PARA TRASLADAR" y ejecutar el Colab `TRASLADO_EVOLUTIVO_KPI`. El objetivo es mantener **un solo script** (`Consolidado.gs`) en lugar de uno por plantilla. Las plantillas ya no llevan scripts.
+- **Por qué Apps Script y no el backend:** la lógica cambia seguido y la mantiene el equipo de BA. Con Apps Script se publica una versión nueva sin tocar Render y el script corre con los permisos de la cuenta de BA, sin tener que compartir cada plantilla con la cuenta de servicio.
+- **`Consolidado.gs` es un único archivo a propósito:** antes la lectura estaba separada en `LecturaCalculo.gs`, que también usaba otra "web de validación" ajena a este proyecto. Se unieron y se quitó lo que solo usaba esa otra web.
+- **Período:** siempre el mes anterior; no se puede elegir.
+- **Sin control de duplicados:** se quitó a pedido porque hacía lento el pegado al leer todo el historial del destino. Si se pega dos veces la misma plantilla, las filas quedan duplicadas.
+- **También escribe la hoja `CONSOLIDADO` de la plantilla**, como hacía el script original.
+- **Reglas del Colab que se mantienen:** PERIODO `YYYY-MM` en KPI, mayúsculas, redondeo a 4 decimales si la celda es % y a 2 si no, fórmula `=F+G-H` en la columna I de EVOLUTIVO, Calibri 11 centrado. El DNI se pega como texto para conservar los ceros iniciales.
+- **VALOR_KPI** sale del formato de número de la celda REAL (`tipoDato_`): `%` → PORCENTAJE, `S/` o `$` → MONEDA, cualquier otro → NUMERICO.
+- **Archivo destino:** `CONSOLIDADO_DESTINO_ID` en `Consolidado.gs` (hojas `KPI` y `EVOLUTIVO`). Para probar se cambia temporalmente por el ID de una copia.
+
+**Problemas ya resueltos (por si vuelven a aparecer):**
+- `404` desde Apps Script → `APPS_SCRIPT_URL` apunta a una implementación que no existe. Se arregla poniendo la URL de la implementación activa en `back/.env` y en Render.
+- `200` con respuesta no-JSON → faltan autorizar permisos nuevos. Se ejecuta `testAuth()` en el editor de Apps Script con la cuenta de BA y se publica una versión nueva.
+- "Estás intentando editar una celda o un objeto protegidos" → la hoja o un rango está protegido y la cuenta de BA no figura entre los editores permitidos (*Datos → Hojas y rangos protegidos*).
+
+## Pendientes
+
+- `handleRunScript` lee la respuesta de Apps Script dos veces (`.json()` y después `.text()`), así que el log de error muestra `Body: (no text)` y oculta el mensaje real. Hay que leerla una vez como texto y después parsearla.
+- Confirmar en Render que `APPS_SCRIPT_URL` tiene la URL nueva y que el backend se desplegó con el commit del Generador de Consolidado.
+- El tiempo de pegado puede seguir alto si el archivo destino es muy grande; no se midió qué paso tarda más.
