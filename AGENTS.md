@@ -1,55 +1,57 @@
 # AGENTS.md
 
-## Run commands
+## Comandos para ejecutar
 
 ```bash
-# Quick dev (serves both frontend + backend on :3000)
+# Desarrollo rápido (sirve frontend + backend en :3000)
 node back/server.js
 
-# Full dev (frontend :5500 via Python, backend :3000)
+# Desarrollo completo (frontend en :5500 con Python, backend en :3000)
 npm run dev-local
 
-# Backend only
+# Solo backend
 cd back && npm install && npm start
 ```
 
-## No build/test/lint
+## Sin build, tests ni lint
 
-This repo has no tests, linting, typecheck, or build step. `front/` is plain static files.
+Este repo no tiene tests, linting, chequeo de tipos ni paso de build. `front/` son archivos estáticos.
 
-## Key entry points
+## Puntos de entrada
 
-- **Backend**: `back/server.js` — single 1800+ line file, all routes/auth/Google API in one place
-- **Frontend**: `front/app.js` — single file, vanilla JS, no bundler
-- **Frontend config**: `front/config.js` — sets `window.APP_CONFIG`, auto-selects API URL by hostname
+- **Backend**: `back/server.js`: un solo archivo de más de 2200 líneas con todas las rutas, la autenticación y las llamadas a las APIs de Google
+- **Frontend**: `front/app.js`: un solo archivo de JavaScript puro, sin bundler
+- **Configuración del frontend**: `front/config.js`: define `window.APP_CONFIG` y elige la URL de la API según el hostname
+- **Apps Script**: `apps-script/`: copia versionada de `doPost.gs` y `Consolidado.gs` del Web App (el código que se ejecuta está en el proyecto de Apps Script)
 
-## Architecture quirks
+## Particularidades de la arquitectura
 
-- `express` is in `package.json` but **unused** — raw Node.js HTTP server
-- `front/` is deployed to GitHub Pages (via `.github/workflows/static.yml`)
-- `back/` is deployed to Render
-- Avance Comisiones sheet ID is resolved automatically by folder search, no env var needed (see `getCachedAvanceComisionesSpreadsheetId()`, server.js:883)
+- `express` figura en `package.json` pero **no se usa**: es un servidor HTTP de Node.js puro
+- `front/` se despliega en GitHub Pages (con `.github/workflows/static.yml`)
+- `back/` se despliega en Render
+- El ID del spreadsheet de Avance Comisiones se resuelve automáticamente buscando en la carpeta, sin variable de entorno (ver `getCachedAvanceComisionesSpreadsheetId()`, server.js:890)
 
-## Adding a new section
+## Agregar una sección nueva
 
-1. Add `'doc-X': 'section-id'` to `SECTION_DICTIONARY` in server.js
-2. Add `'doc-X'` to `allowedSections` in relevant role(s) in `ROLE_DEFINITIONS`
-3. Add `<button class="nav-item" data-section="section-id">` in front/index.html
-4. Add `<section id="section-id-section" class="section">` in front/index.html
-5. Add handler in `changeSection()` in front/app.js
+1. Agregar `'doc-X': 'section-id'` a `SECTION_DICTIONARY` en server.js
+2. Agregar `'doc-X'` a `allowedSections` de los roles que correspondan en `ROLE_DEFINITIONS`
+3. Agregar `<button class="nav-item" data-section="section-id">` en front/index.html
+4. Agregar `<section id="section-id-section" class="section">` en front/index.html
+5. Agregar `'doc-X': 'section-id'` a `sectionDictionary` y el manejo en `changeSection()`, ambos en front/app.js
 
-## Env setup required
+## Configuración de entorno necesaria
 
-`back/.env` must exist. Copy from `back/.env.example`. Key vars:
-- `ALLOWED_ORIGIN` — frontend origin(s), comma-separated
-- `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` — service account
-- `GOOGLE_LOGIN_CLIENT_ID` — for Google Sign-In
+Tiene que existir `back/.env`. Se crea copiando `back/.env.example`. Variables principales:
+- `ALLOWED_ORIGIN`: origen u orígenes del frontend, separados por coma
+- `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY`: cuenta de servicio
+- `GOOGLE_LOGIN_CLIENT_ID`: para Google Sign-In
 
-## Deployment
+## Despliegue
 
-- Front: push to main → GitHub Pages auto-deploys via action
-- Back: manual deploy to Render (no CI)
+- Front: push a main → GitHub Pages se despliega solo con la action
+- Back: despliegue manual en Render (sin CI)
+- Apps Script: nueva versión de la implementación existente, siempre con la cuenta de BA
 
-## Caching frontend changes
+## Caché del frontend
 
-After editing front files, bump `?v=` query string on `<script>` and `<link>` tags in `front/index.html`.
+Después de editar archivos del front, actualizá el parámetro `?v=` de las etiquetas `<script>` y `<link>` en `front/index.html`.
