@@ -77,7 +77,9 @@ WEB_COMISIONES/
    - `/api/append-row` - Agregar filas (solo editores)
    - `/api/correo-esquemas` - Listar esquemas para correo
    - `/api/correo-validate` - Validar datos de correo
-   - `/api/run-script` - Ejecutar automatizaciones
+   - `/api/run-script` - Ejecutar automatizaciones en Apps Script (acciones `correo`, `consolidado-preview`, `consolidado-pegar`)
+   - `/api/manuales-flujos` - Listar manuales y flujos
+   - `/api/credenciales` - Listar credenciales
    - `/api/eventos` (GET) - Listar eventos del calendario
    - `/api/eventos` (POST) - Crear nuevo evento
    - `/api/eventos/:id` (PUT) - Editar evento existente
@@ -143,12 +145,16 @@ WEB_COMISIONES/
    - Seguimiento de Excepciones (`#seguimiento-section`)
    - Gestión de Comisiones (`#gestion-comisiones-section`)
    - Generador de Correos (`#generador-correos-section`)
+   - Generador de Consolidado (`#generador-consolidado-section`)
    - Detalle Indicadores (`#detalle-indicadores-section`)
    - Links de Interés (`#links-interes-section`)
    - Organigrama Comisional (`#organigrama-section`)
    - Organigrama BA (`#organigrama-ba-section`)
    - Análisis de Tiempo (`#analisis-tiempo-section`)
    - Calendario de Comisiones (`#calendario-section`)
+   - Gestión de Esquemas (`#gestion-esquemas-section`)
+   - Manuales / Flujos (`#manuales-flujos-section`)
+   - Credenciales (`#credenciales-section`)
 
 **Recursos externos**:
 - Google Sign-In (accounts.google.com)
@@ -201,6 +207,9 @@ WEB_COMISIONES/
    - **Links de Interés**: Recursos externos por producto
    - **Organigramas**: Visualización jerárquica
    - **Generador de Correos**: Validación y ejecución de correos
+   - **Gestión de Esquemas**: Enlace al formulario de Apps Script sobre la hoja MAESTRO
+   - **Manuales / Flujos**: Catálogo con filtros por tipo y área, y búsqueda
+   - **Credenciales**: Listado con filtros por fuente y producto, y búsqueda
 
 **Funciones utility**:
 - `buildGridFromSheet()`: Convierte respuesta de API a grid renderizable
@@ -328,8 +337,12 @@ node scripts/dev-local.js
 | doc-j (Organigrama) | ✓ | ✓ | ✓ |
 | doc-k (Organigrama BA) | ✓ | ✓ | ✗ |
 | doc-l (Generador Correos) | ✗ | ✓ | ✗ |
+| doc-n (Gestión de Esquemas) | ✓ | ✓ | ✗ |
+| doc-o (Manuales / Flujos) | ✓ | ✓ | ✗ |
 | doc-p (Análisis de Tiempo) | ✓ | ✓ | ✗ |
 | doc-q (Calendario) | ✓ | ✓ | ✗ |
+| doc-r (Credenciales) | ✓ | ✓ | ✗ |
+| doc-s (Generador de Consolidado) | ✗ | ✓ | ✗ |
 | Edición de hojas | ✗ | ✓ | ✗ |
 
 ---
@@ -513,14 +526,92 @@ const SHEET_NAME  = 'CALENDARIO';
 
 ---
 
-## 10. Notas de Desarrollo
+## 10. Módulos: Gestión de Esquemas, Manuales / Flujos y Credenciales
+
+Los tres están disponibles para los roles `administrador` y `administrador_editor`.
+
+### 10.1 Gestión de Esquemas (`doc-n`)
+
+Sidebar → ⚙️ **Gestión de Esquemas**. Muestra un botón **Abrir formulario** que abre en otra pestaña una Web App de Apps Script. Desde ese formulario se crean períodos nuevos, se actualizan indicadores y pesos, o se cierran esquemas en la hoja **MAESTRO**. La sección no consume ningún endpoint del backend.
+
+### 10.2 Manuales / Flujos (`doc-o`)
+
+Sidebar → 📚 **Manuales / Flujos**. Es un catálogo de manuales y diagramas de flujo. Se puede filtrar por tipo (`Manual` / `Flujo`) y por área o producto, y buscar por título o descripción.
+
+- **Fuente:** hoja `MANUALES/FLUJOS` del spreadsheet **INFORMACION COMISIONES** (`1iwineJiX2AKSKhc95MyExyherlXe3hyRsuMH8m2X9Sg`), rango `A:F`
+- **Columnas** (se identifican por el nombre del encabezado): `TITULO`, `DESCRIPCION`, `TIPO`, `AREA / PRODUCTO`, `AUTOR`, `LINK`
+- **Endpoint:** `GET /api/manuales-flujos` (requiere `doc-o`). Descarta las filas sin título.
+
+### 10.3 Credenciales (`doc-r`)
+
+Sidebar → 🔑 **Credenciales**. Lista las credenciales con filtros por fuente y producto y un buscador.
+
+- **Fuente:** hoja `CREDENCIALES` del spreadsheet **INFORMACION COMISIONES**, rango `A:F`
+- **Columnas** (se identifican por el nombre del encabezado): `FUENTE`, `PRODUCTO`, `DESCRIPCION`, `TITULO`, `NAME`, `VALUE`
+- **Endpoint:** `GET /api/credenciales` (requiere `doc-r`). Descarta las filas que no tienen `TITULO` ni `NAME`.
+
+---
+
+## 11. Módulo: Generador de Consolidado (`doc-s`)
+
+Disponible solo para el rol `administrador_editor` (sidebar → 📊 **Generador de Consolidado**). Reemplaza el flujo manual anterior y las plantillas ya no necesitan scripts. Antes había que correr `generarConsolidadoKPI()` en cada plantilla, copiar el archivo a la carpeta "COMISIONES PARA TRASLADAR" y ejecutar el Colab `TRASLADO_EVOLUTIVO_KPI`.
+
+### 11.1 Flujo
+
+1. Se pega el link de la plantilla y se presiona **Validar**. Apps Script lee las hojas `CALCULO_*` y `BD_EQUIPO` y arma el consolidado con la misma lógica que antes, pero sin escribir nada todavía.
+2. La web muestra:
+   - **Errores** (`#REF!`, `#N/A`… en META, REAL, % o COMISIÓN): bloquean el pegado.
+   - **Avisos** (nombre que no está en BD_EQUIPO, pesos que no suman 100 %, comisión vacía, hoja no reconocida): se puede continuar.
+   - **Vista previa** de las tablas KPI y EVOLUTIVO tal como se van a pegar.
+3. **Pegar en destino**, después de confirmar:
+   - Escribe la hoja `CONSOLIDADO` dentro de la plantilla, igual que antes.
+   - Agrega las filas al final de las hojas `KPI` y `EVOLUTIVO` del archivo destino `10cnP7epXBiDrhVKfMy73A0jDqnp7ruiDWRFLmY4tkXw`.
+   - **No revisa si ese período ya se había pegado.** Si se pega dos veces la misma plantilla, las filas quedan duplicadas en el destino.
+
+El PERIODO siempre es el mes anterior (`periodoMesAnterior_()`).
+
+### 11.2 Transformaciones al pegar (las mismas del Colab)
+
+- **KPI**:
+  - PERIODO como `YYYY-MM` y columnas A–J en mayúsculas.
+  - Las celdas con formato % se redondean a 4 decimales; los demás números, a 2.
+  - Formato `0.00%` en las celdas que son porcentaje.
+  - Fuente Calibri 11, texto centrado.
+- **EVOLUTIVO**:
+  - Todo el texto en mayúsculas.
+  - La columna I (COMISION_GDP) lleva la fórmula `=F+G-H`.
+  - Las filas se agregan después de la última fila con datos en la columna A.
+  - Fuente Calibri 11, texto centrado.
+- El DNI se pega como texto, así que conserva los ceros iniciales.
+
+### 11.3 Dónde está el código
+
+| Parte | Archivo |
+|---|---|
+| Lectura de la plantilla, consolidado y pegado (único archivo a mantener) | `apps-script/Consolidado.gs` (copia versionada; el código que se ejecuta está en el proyecto de Apps Script del Web App) |
+| Ruteo de acciones | `apps-script/doPost.gs` |
+| Backend | `handleRunScript` en `back/server.js` (`RUN_SCRIPT_ACTION_SECTIONS` asigna la sección requerida a cada acción) |
+| Frontend | sección `generador-consolidado` en `front/index.html` y bloque "Generador de Consolidado" en `front/app.js` |
+
+**Para cambiar la lógica**, editá `Consolidado.gs` en el proyecto de Apps Script y entrá a **Implementar → Administrar implementaciones → Editar → Nueva versión**. Así la URL no cambia y no hay que tocar Render. Después copiá los cambios también en `apps-script/` del repo para mantener la versión al día.
+
+### 11.4 Implementación del Web App
+
+- **Siempre se implementa con la cuenta de BA.** El Web App usa los permisos de la cuenta que lo implementa: lee las plantillas, escribe en el archivo destino y crea los borradores del Generador de Correos. Si lo implementa otra cuenta, queda con los permisos de esa persona y el correo o el consolidado pueden fallar.
+- **Configuración:** *Ejecutar como: Yo* y *Quién tiene acceso: Cualquier usuario*. Así lo requiere `APPS_SCRIPT_AUTH_MODE=none`. Las llamadas igual están protegidas por `APPS_SCRIPT_SECRET`.
+- **Para publicar cambios** usá **Nueva versión** de la implementación existente. Si se crea una **implementación nueva**, la URL cambia y hay que actualizar `APPS_SCRIPT_URL` en `back/.env` y en Render. Si no se actualiza, el correo y el consolidado devuelven error 404.
+- Este Web App atiende al **Generador de Correos y al Generador de Consolidado**. Cualquier cambio de URL o de implementación afecta a los dos.
+
+---
+
+## 12. Notas de Desarrollo
 
 - El servidor usa Node.js nativo (http module), no Express aunque esté en dependencies
 - Frontend es estático, se sirve desde `back/server.js` apuntando a `front/`
 - Las sheets "resumen" y "avance" en algunos spreadsheets están restringidas
-- El ID de Avance Comisiones se resuelve dinámicamente buscando en la carpeta del año actual
+- El ID de Avance Comisiones se resuelve solo (no hay variable de entorno): se toma el archivo `MMYYYY_...` del mes más reciente en la carpeta del año actual
 - Los cambios en frontend requieren incrementar el query string `?v=` en los script tags
 
 ---
 
-*Última actualización: julio 2026 — incluye módulos Análisis de Tiempo y Calendario de Comisiones*
+*Última actualización: octubre 2026 — incluye los módulos Gestión de Esquemas, Manuales / Flujos, Credenciales y Generador de Consolidado*

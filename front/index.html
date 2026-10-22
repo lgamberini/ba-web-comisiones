@@ -14,7 +14,7 @@
     rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E"
   />
-  <link rel="stylesheet" href="styles.css?v=20260908-1" />
+  <link rel="stylesheet" href="styles.css?v=20261021-1" />
 </head>
 <body class="logged-out">
   <!-- Header de la aplicación - muestra título y controls de sesión -->
@@ -117,6 +117,10 @@
         <button class="nav-item" data-section="generador-correos">
           <span class="nav-icon">📧</span>
           <span class="nav-label">Generador de Correos</span>
+        </button>
+        <button class="nav-item" data-section="generador-consolidado">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Generador de Consolidado</span>
         </button>
         <button class="nav-item" data-section="detalle-indicadores">
           <span class="nav-icon">🗂️</span>
@@ -360,6 +364,24 @@
         </section>
       </section>
 
+      <!-- Sección: Generador de Consolidado (doc-s) -->
+      <section id="generador-consolidado-section" class="section">
+        <section class="controls">
+          <input id="consolidadoUrlInput" type="text" placeholder="URL de la plantilla (Google Sheets)" />
+          <button id="consolidadoValidarBtn" type="button">Validar</button>
+        </section>
+        <section class="data-area">
+          <h2 id="consolidadoTitle">Generador de consolidado</h2>
+          <div id="consolidadoStatus" class="status">Ingresa la URL de la plantilla y presiona Validar.</div>
+          <div id="consolidadoMensajes" class="consolidado-mensajes hidden"></div>
+          <div id="consolidadoPreview" class="hidden"></div>
+          <div id="consolidadoButtons" class="correo-buttons hidden">
+            <button id="consolidadoLimpiarBtn" type="button">Limpiar</button>
+            <button id="consolidadoPegarBtn" type="button">Pegar en destino</button>
+          </div>
+        </section>
+      </section>
+
 
       <!-- Sección: Análisis de Tiempos (doc-p) -->
       <section id="analisis-tiempo-section" class="section">
@@ -552,6 +574,6 @@
 
   <script src="config.js?v=20260513-1"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="app.js?v=20260908-1"></script>
+  <script src="app.js?v=20261022-1"></script>
 </body>
 </html>

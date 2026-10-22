@@ -1555,6 +1555,29 @@ td.cell-icon {
 #correoEjecutarBtn:hover:not(:disabled) { background: #1d4ed8; }
 #correoEjecutarBtn:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
 
+/* ============================================
+   Generador de Consolidado - Mensajes y vista previa
+   ============================================ */
+#consolidadoUrlInput { flex: 1; min-width: 260px; }
+.consolidado-mensajes { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+.consolidado-mensaje {
+  border: 1px solid; border-radius: 0.5rem; padding: 0.75rem 1rem; font-size: 0.875rem;
+}
+.consolidado-mensaje ul { margin: 0.4rem 0 0; padding-left: 1.2rem; max-height: 220px; overflow-y: auto; }
+.consolidado-mensaje li { margin: 0.15rem 0; }
+.consolidado-mensaje--error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.consolidado-mensaje--aviso { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.consolidado-mensaje--resumen { background: #f8fafc; border-color: #e2e8f0; color: #334155; }
+.consolidado-table-title { margin: 1.5rem 0 0; font-size: 1rem; color: #1e293b; }
+.consolidado-table-wrapper { max-height: 420px; overflow: auto; }
+.consolidado-table thead th { position: sticky; top: 0; z-index: 1; white-space: nowrap; padding: 0.6rem 0.8rem; font-size: 0.8rem; }
+.consolidado-table tbody td { padding: 0.45rem 0.8rem; font-size: 0.82rem; white-space: nowrap; }
+#consolidadoLimpiarBtn { background: white; border-color: #e2e8f0; color: #475569; }
+#consolidadoLimpiarBtn:hover { background: #f1f5f9; }
+#consolidadoPegarBtn { background: #2563eb; color: white; }
+#consolidadoPegarBtn:hover:not(:disabled) { background: #1d4ed8; }
+#consolidadoPegarBtn:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+
 /* ===== MANUALES / FLUJOS ===== */
 .manuales-controls {
   display: flex;

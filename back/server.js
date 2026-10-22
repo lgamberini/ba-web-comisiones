@@ -149,7 +149,14 @@ const SECTION_DICTIONARY = {
   'doc-o': 'manuales-flujos',
   'doc-p': 'analisis-tiempo',
   'doc-q': 'calendario',
-  'doc-r': 'credenciales'
+  'doc-r': 'credenciales',
+  'doc-s': 'generador-consolidado'
+};
+// Sección requerida por cada acción de /api/run-script
+const RUN_SCRIPT_ACTION_SECTIONS = {
+  'correo': 'doc-l',
+  'consolidado-preview': 'doc-s',
+  'consolidado-pegar': 'doc-s'
 };
 // Definiciones de roles y sus permisos
 // Cada rol tiene acceso a secciones específicas y spreadsheets permitidos
@@ -159,7 +166,7 @@ const ROLE_DEFINITIONS = {
     allowedSpreadsheetIds: ['*']
   },
   administrador_editor: {
-    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-n', 'doc-o', 'doc-p', 'doc-q', 'doc-r'],
+    allowedSections: ['doc-a', 'doc-b', 'doc-c', 'doc-d', 'doc-e', 'doc-f', 'doc-g', 'doc-h', 'doc-i', 'doc-j', 'doc-k', 'doc-l', 'doc-n', 'doc-o', 'doc-p', 'doc-q', 'doc-r', 'doc-s'],
     allowedSpreadsheetIds: ['*'],
     canEdit: true
   },
@@ -1967,11 +1974,6 @@ async function handleRunScript(req, res) {
   const auth = authenticateRequest(req, res);
   if (!auth) return;
 
-  if (!auth.user.allowedSections.includes('doc-l')) {
-    sendJson(req, res, 403, { error: 'No tienes permisos para ejecutar automatizaciones.' });
-    return;
-  }
-
   let body;
   try {
     body = await parseJsonBody(req);
@@ -1981,22 +1983,40 @@ async function handleRunScript(req, res) {
   }
 
   const action = String(body.action || '').trim().toLowerCase();
+  const requiredSection = RUN_SCRIPT_ACTION_SECTIONS[action];
 
-  if (!['correo'].includes(action)) {
+  if (!requiredSection) {
     sendJson(req, res, 400, { error: 'Acción no válida.' });
     return;
   }
 
-  const idArchivo = String(body.idArchivo || '').trim();
-  const asunto = String(body.asunto || '').trim();
-  const tipoPago = String(body.tipoPago || '').trim();
-  const periodicidad = String(body.periodicidad || '').trim();
-  const destinatarios = String(body.destinatarios || '').trim();
-  const cc = String(body.cc || '').trim();
-
-  if (!idArchivo || !asunto || !tipoPago) {
-    sendJson(req, res, 400, { error: 'Faltan parámetros para la acción correo.' });
+  if (!auth.user.allowedSections.includes(requiredSection)) {
+    sendJson(req, res, 403, { error: 'No tienes permisos para ejecutar automatizaciones.' });
     return;
+  }
+
+  let payload;
+  if (action === 'correo') {
+    const idArchivo = String(body.idArchivo || '').trim();
+    const asunto = String(body.asunto || '').trim();
+    const tipoPago = String(body.tipoPago || '').trim();
+    const periodicidad = String(body.periodicidad || '').trim();
+    const destinatarios = String(body.destinatarios || '').trim();
+    const cc = String(body.cc || '').trim();
+
+    if (!idArchivo || !asunto || !tipoPago) {
+      sendJson(req, res, 400, { error: 'Faltan parámetros para la acción correo.' });
+      return;
+    }
+    payload = { action, idArchivo, asunto, tipoPago, periodicidad, destinatarios, cc };
+  } else {
+    // consolidado-preview / consolidado-pegar
+    const idArchivo = extractFileId(body.url);
+    if (!idArchivo) {
+      sendJson(req, res, 400, { error: 'No se pudo extraer el ID del archivo de la URL proporcionada.' });
+      return;
+    }
+    payload = { action, idArchivo };
   }
 
   if (!APPS_SCRIPT_URL) {
@@ -2038,7 +2058,7 @@ async function handleRunScript(req, res) {
     appsResponse = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: appsScriptHeaders,
-      body: JSON.stringify({ action, idArchivo, asunto, tipoPago, periodicidad, destinatarios, cc, secret: APPS_SCRIPT_SECRET }),
+      body: JSON.stringify({ ...payload, secret: APPS_SCRIPT_SECRET }),
       redirect: 'follow'
     });
   } catch (err) {
@@ -2067,7 +2087,12 @@ async function handleRunScript(req, res) {
     return;
   }
 
-  sendJson(req, res, 200, { ok: true });
+  if (action === 'correo') {
+    sendJson(req, res, 200, { ok: true });
+    return;
+  }
+
+  sendJson(req, res, 200, appsData);
 }
 
 async function requestHandler(req, res) {

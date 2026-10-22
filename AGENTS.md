@@ -28,7 +28,7 @@ This repo has no tests, linting, typecheck, or build step. `front/` is plain sta
 - `express` is in `package.json` but **unused** — raw Node.js HTTP server
 - `front/` is deployed to GitHub Pages (via `.github/workflows/static.yml`)
 - `back/` is deployed to Render
-- Avance Comisiones sheet ID can be hardcoded OR resolved dynamically by folder search (see server.js:153)
+- Avance Comisiones sheet ID is resolved automatically by folder search, no env var needed (see `getCachedAvanceComisionesSpreadsheetId()`, server.js:883)
 
 ## Adding a new section
 

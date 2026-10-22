@@ -72,7 +72,8 @@ const sectionDictionary = {
   'doc-o': 'manuales-flujos',
   'doc-p': 'analisis-tiempo',
   'doc-q': 'calendario',
-  'doc-r': 'credenciales'
+  'doc-r': 'credenciales',
+  'doc-s': 'generador-consolidado'
 };
 const sectionAliasesById = Object.fromEntries(
   Object.entries(sectionDictionary).map(([alias, sectionId]) => [sectionId, alias])
@@ -170,6 +171,15 @@ const elements = {
   correoButtons: document.getElementById("correoButtons"),
   correoLimpiarBtn: document.getElementById("correoLimpiarBtn"),
   correoEjecutarBtn: document.getElementById("correoEjecutarBtn"),
+  consolidadoUrlInput: document.getElementById("consolidadoUrlInput"),
+  consolidadoValidarBtn: document.getElementById("consolidadoValidarBtn"),
+  consolidadoTitle: document.getElementById("consolidadoTitle"),
+  consolidadoStatus: document.getElementById("consolidadoStatus"),
+  consolidadoMensajes: document.getElementById("consolidadoMensajes"),
+  consolidadoPreview: document.getElementById("consolidadoPreview"),
+  consolidadoButtons: document.getElementById("consolidadoButtons"),
+  consolidadoLimpiarBtn: document.getElementById("consolidadoLimpiarBtn"),
+  consolidadoPegarBtn: document.getElementById("consolidadoPegarBtn"),
   manualesTipoFilter:   document.getElementById("manualesTipoFilter"),
   manualesAreaFilter:   document.getElementById("manualesAreaFilter"),
   manualesSearch:       document.getElementById("manualesSearch"),
@@ -535,6 +545,202 @@ async function ejecutarCorreo() {
   }
 }
 
+// ── Generador de Consolidado ──────────────────────────────────────────────────
+// La lógica vive en Apps Script (apps-script/Consolidado.gs); acá solo se valida, se muestra y se confirma.
+
+let consolidadoValidatedData = null;
+
+function setConsolidadoStatus(message, color = '#334155') {
+  elements.consolidadoStatus.textContent = message;
+  elements.consolidadoStatus.style.color = color;
+}
+
+function resetConsolidadoState() {
+  consolidadoValidatedData = null;
+  elements.consolidadoUrlInput.value = '';
+  elements.consolidadoMensajes.innerHTML = '';
+  elements.consolidadoMensajes.classList.add('hidden');
+  elements.consolidadoPreview.innerHTML = '';
+  elements.consolidadoPreview.classList.add('hidden');
+  elements.consolidadoButtons.classList.add('hidden');
+  elements.consolidadoTitle.textContent = 'Generador de consolidado';
+  setConsolidadoStatus('Ingresa la URL de la plantilla y presiona Validar.');
+}
+
+function invalidarConsolidado() {
+  if (!consolidadoValidatedData) return;
+  consolidadoValidatedData = null;
+  elements.consolidadoButtons.classList.add('hidden');
+  setConsolidadoStatus('La URL cambió. Vuelve a validar antes de pegar.');
+}
+
+async function runConsolidadoScript(body) {
+  const res = await authFetch(`${API_BASE_URL}/api/run-script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function createConsolidadoMensajeBlock(title, items, variant, max = 50) {
+  const block = document.createElement('div');
+  block.className = `consolidado-mensaje consolidado-mensaje--${variant}`;
+  const h = document.createElement('strong');
+  h.textContent = `${title} (${items.length})`;
+  block.appendChild(h);
+  const ul = document.createElement('ul');
+  items.slice(0, max).forEach(text => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    ul.appendChild(li);
+  });
+  if (items.length > max) {
+    const li = document.createElement('li');
+    li.textContent = `… y ${items.length - max} más`;
+    ul.appendChild(li);
+  }
+  block.appendChild(ul);
+  return block;
+}
+
+function createConsolidadoTable(title, encabezados, filas) {
+  const wrap = document.createElement('div');
+  const h = document.createElement('h3');
+  h.className = 'consolidado-table-title';
+  h.textContent = `${title} · ${filas.length} fila(s)`;
+  wrap.appendChild(h);
+
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'table-wrapper consolidado-table-wrapper';
+  const table = document.createElement('table');
+  table.className = 'app-data-table consolidado-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  encabezados.forEach(text => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  const tbody = document.createElement('tbody');
+  filas.forEach(fila => {
+    const tr = document.createElement('tr');
+    fila.forEach(text => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.append(thead, tbody);
+  tableWrapper.appendChild(table);
+  wrap.appendChild(tableWrapper);
+  return wrap;
+}
+
+async function validarConsolidado() {
+  const url = elements.consolidadoUrlInput.value.trim();
+  if (!url) {
+    setConsolidadoStatus('Ingresa la URL de la plantilla.', '#b91c1c');
+    return;
+  }
+
+  consolidadoValidatedData = null;
+  elements.consolidadoMensajes.classList.add('hidden');
+  elements.consolidadoPreview.classList.add('hidden');
+  elements.consolidadoButtons.classList.add('hidden');
+  elements.consolidadoValidarBtn.disabled = true;
+  setConsolidadoStatus('Leyendo la plantilla y armando el consolidado...');
+
+  try {
+    const data = await runConsolidadoScript({ action: 'consolidado-preview', url });
+    const errores = data.errores || [];
+    const avisos = data.avisos || [];
+
+    elements.consolidadoTitle.textContent = `Consolidado ${data.periodo || ''} · ${data.archivo || ''}`;
+
+    elements.consolidadoMensajes.innerHTML = '';
+    if (errores.length) elements.consolidadoMensajes.appendChild(createConsolidadoMensajeBlock('Errores', errores, 'error'));
+    if (avisos.length) elements.consolidadoMensajes.appendChild(createConsolidadoMensajeBlock('Avisos', avisos, 'aviso'));
+    if ((data.resumen || []).length) elements.consolidadoMensajes.appendChild(createConsolidadoMensajeBlock('Hojas leídas', data.resumen, 'resumen'));
+    elements.consolidadoMensajes.classList.toggle('hidden', !elements.consolidadoMensajes.childElementCount);
+
+    if (errores.length) {
+      setConsolidadoStatus('No se puede pegar: la plantilla tiene celdas con error. Corrígelas y vuelve a validar.', '#b91c1c');
+      return;
+    }
+
+    elements.consolidadoPreview.innerHTML = '';
+    elements.consolidadoPreview.append(
+      createConsolidadoTable('KPI', data.kpi.encabezados, data.kpi.filas),
+      createConsolidadoTable('EVOLUTIVO', data.evolutivo.encabezados, data.evolutivo.filas)
+    );
+    elements.consolidadoPreview.classList.remove('hidden');
+
+    if (!data.kpi.filas.length && !data.evolutivo.filas.length) {
+      setConsolidadoStatus('La plantilla no generó filas para pegar.', '#b91c1c');
+      return;
+    }
+
+    consolidadoValidatedData = {
+      url,
+      periodo: data.periodo,
+      filasKpi: data.kpi.filas.length,
+      filasEvolutivo: data.evolutivo.filas.length,
+      avisos: avisos.length
+    };
+    elements.consolidadoButtons.classList.remove('hidden');
+    setConsolidadoStatus(
+      avisos.length
+        ? `Validación con ${avisos.length} aviso(s). Revísalos antes de pegar.`
+        : 'Validación exitosa. Revisa la estructura antes de pegar.',
+      avisos.length ? '#b45309' : '#166534'
+    );
+  } catch (err) {
+    setConsolidadoStatus(`Error al validar: ${err.message}`, '#b91c1c');
+  } finally {
+    elements.consolidadoValidarBtn.disabled = false;
+  }
+}
+
+function pegarConsolidado() {
+  const validated = consolidadoValidatedData;
+  if (!validated) {
+    setConsolidadoStatus('Primero valida la plantilla.', '#b91c1c');
+    return;
+  }
+  const avisoTexto = validated.avisos ? ` Hay ${validated.avisos} aviso(s) sin resolver.` : '';
+  showConfirmModal(
+    `Se escribirá la hoja CONSOLIDADO en la plantilla y se agregarán ${validated.filasKpi} fila(s) a KPI y ${validated.filasEvolutivo} a EVOLUTIVO (período ${validated.periodo}).${avisoTexto} ¿Continuar?`,
+    () => ejecutarPegadoConsolidado(validated)
+  );
+}
+
+async function ejecutarPegadoConsolidado(validated) {
+  elements.consolidadoPegarBtn.disabled = true;
+  elements.consolidadoValidarBtn.disabled = true;
+  setConsolidadoStatus('Pegando en el archivo destino...');
+
+  try {
+    const data = await runConsolidadoScript({ action: 'consolidado-pegar', url: validated.url });
+
+    consolidadoValidatedData = null;
+    elements.consolidadoButtons.classList.add('hidden');
+    const partes = [];
+    if (data.filasKpi) partes.push(`${data.filasKpi} fila(s) en KPI desde la fila ${data.filaInicioKpi}`);
+    if (data.filasEvolutivo) partes.push(`${data.filasEvolutivo} en EVOLUTIVO desde la fila ${data.filaInicioEvolutivo}`);
+    setConsolidadoStatus(`Consolidado ${data.periodo} pegado: ${partes.join(' y ')}.`, '#166534');
+  } catch (err) {
+    setConsolidadoStatus(`Error al pegar: ${err.message}`, '#b91c1c');
+  } finally {
+    elements.consolidadoPegarBtn.disabled = false;
+    elements.consolidadoValidarBtn.disabled = false;
+  }
+}
+
 function resetDetalleIndicadoresState() {
   currentDetalleIndicadoresGrid = [];
   currentDetalleIndicadoresHeaderInfo = null;
@@ -682,6 +888,7 @@ function clearSessionUi() {
   resetOrganigramaState();
   resetOrganigramaBaState();
   resetCorreoState();
+  resetConsolidadoState();
   resetPoliticasState();
   resetRentabilidadState();
   elements.loginForm.reset();
@@ -5285,6 +5492,10 @@ function init() {
   elements.correoValidarBtn.addEventListener("click", validarCorreo);
   elements.correoLimpiarBtn.addEventListener("click", limpiarCorreo);
   elements.correoEjecutarBtn.addEventListener("click", ejecutarCorreo);
+  elements.consolidadoValidarBtn.addEventListener("click", validarConsolidado);
+  elements.consolidadoLimpiarBtn.addEventListener("click", resetConsolidadoState);
+  elements.consolidadoPegarBtn.addEventListener("click", pegarConsolidado);
+  elements.consolidadoUrlInput.addEventListener("input", invalidarConsolidado);
   elements.manualesRefreshBtn.addEventListener("click", () => loadManualesFlujos(true));
   elements.manualesTipoFilter.addEventListener("change", renderManualesList);
 

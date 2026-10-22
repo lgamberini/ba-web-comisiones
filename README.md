@@ -123,6 +123,12 @@ Luego acceder a `http://127.0.0.1:5500`
 - **Organigrama Comisional**: Estructura jerárquica
 - **Organigrama BA**: Estructura Business Analytics
 - **Generador de Correos**: Automatización de correos
+- **Generador de Consolidado**: Arma el consolidado KPI/EVOLUTIVO de una plantilla y lo pega en el archivo destino (lógica en `apps-script/`)
+- **Gestión de Esquemas**: Acceso al formulario (Apps Script) para crear, actualizar o cerrar esquemas en la hoja MAESTRO
+- **Manuales / Flujos**: Catálogo filtrable de manuales y diagramas de flujo
+- **Análisis de Tiempo**: Análisis del tiempo dedicado a las tareas de comisiones
+- **Calendario**: Fechas clave de comisiones (pagos, metas, reuniones)
+- **Credenciales**: Consulta de credenciales por fuente y producto
 
 ## Variables de Entorno
 
@@ -139,19 +145,12 @@ Luego acceder a `http://127.0.0.1:5500`
 | `GOOGLE_TOKEN_URI` | Endpoint OAuth Google | https://oauth2.googleapis.com/token |
 | `GOOGLE_LOGIN_CLIENT_ID` | Client ID para Google Sign-In | - |
 | `GOOGLE_ROLE_EMAILS_JSON` | JSON con correos por rol | - |
-| `AVANCE_COMISIONES_SPREADSHEET_ID` | ID del sheet de avance | - |
-| `APPS_SCRIPT_URL` | URL de Apps Script para automatizaciones | - |
+| `APPS_SCRIPT_URL` | URL del Web App de Apps Script (correo y consolidado). Se implementa siempre con la cuenta de BA | - |
 | `APPS_SCRIPT_AUTH_MODE` | Modo auth Apps Script (none/service/user) | none |
 
-## Actualización Mensual
+## Avance Comisiones
 
-Cuando cambie el archivo mensual de Avance Comisiones, actualizar en `back/.env`:
-
-```env
-AVANCE_COMISIONES_SPREADSHEET_ID=ID_DEL_NUEVO_SHEET
-```
-
-Luego reiniciar el servidor.
+No hay que configurar ni actualizar el ID del sheet de Avance Comisiones. El servidor lo busca solo: dentro de la carpeta de cronogramas entra a la subcarpeta del año actual y toma el archivo `MMYYYY_Cronograma_de_Comisiones` del mes más reciente. El resultado se guarda en caché durante 1 hora.
 
 ## Despliegue
 
