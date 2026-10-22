@@ -101,9 +101,3 @@ Detalle funcional completo en `PROJECT_DOCUMENTATION.md`, sección 11. Lo que no
 - `404` desde Apps Script → `APPS_SCRIPT_URL` apunta a una implementación que no existe. Se arregla poniendo la URL de la implementación activa en `back/.env` y en Render.
 - `200` con respuesta no-JSON → faltan autorizar permisos nuevos. Se ejecuta `testAuth()` en el editor de Apps Script con la cuenta de BA y se publica una versión nueva.
 - "Estás intentando editar una celda o un objeto protegidos" → la hoja o un rango está protegido y la cuenta de BA no figura entre los editores permitidos (*Datos → Hojas y rangos protegidos*).
-
-## Pendientes
-
-- `handleRunScript` lee la respuesta de Apps Script dos veces (`.json()` y después `.text()`), así que el log de error muestra `Body: (no text)` y oculta el mensaje real. Hay que leerla una vez como texto y después parsearla.
-- Confirmar en Render que `APPS_SCRIPT_URL` tiene la URL nueva y que el backend se desplegó con el commit del Generador de Consolidado.
-- El tiempo de pegado puede seguir alto si el archivo destino es muy grande; no se midió qué paso tarda más.
